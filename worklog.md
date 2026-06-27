@@ -662,3 +662,40 @@ Stage Summary:
   behind Vercel (the deploy-fix commits) because the user's GitHub token was
   already deleted. Not critical — Vercel is the source of truth for the live
   app. Can re-push to GitHub later if desired.
+
+---
+Task ID: 12
+Agent: main (orchestrator)
+Task: Switch image storage from Firebase Storage (paid Blaze plan required) to Cloudinary (free, no credit card).
+
+Work Log:
+- Installed `cloudinary` npm package (v2.10.0).
+- Created `src/lib/cloudinary.ts` — server-side upload helper using the v2 SDK:
+  - `isCloudinaryConfigured` flag from env vars
+  - `uploadImageToCloudinary({ buffer, userId })` → uploads via
+    `cloudinary.uploader.upload_stream` to a `campuskart/{userId}/` folder,
+    returns a secure CDN URL
+  - Lazy config (only calls cloudinary.config on first use)
+- Rewrote `src/app/api/upload/route.ts` to call `uploadImageToCloudinary`
+  instead of `uploadImageToStorage` (Firebase). Kept all the same validation
+  (5MB max, jpeg/png/webp/gif), kept client-side compression
+  (browser-image-compression) so Cloudinary gets a small optimized image.
+- Added `runtime = "nodejs"` to the upload route.
+- Added 3 env vars to `.env` and `.env.example`:
+  CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
+- Added the 3 env vars to the Vercel project via the API.
+- Committed + redeployed. Upload endpoint returns 401 (auth required) when
+  unauthenticated — confirms the route loads cleanly with Cloudinary wired up.
+- `bunx tsc --noEmit` clean; `bun run lint` clean.
+- Firebase Storage is no longer used (the uploadImageToStorage function still
+  exists in firestore.ts but is dead code; can be removed later if desired).
+
+Stage Summary:
+- Image storage is now Cloudinary (free tier: 25GB storage + 25GB bandwidth/month,
+  no credit card required). Firebase Storage is no longer needed, so the app
+  runs entirely on the free Firebase Spark plan (Auth + Firestore only).
+- The user's Cloudinary cloud name is `drlmgjt6p`. Images are organized under
+  `campuskart/{userId}/` folders for easy management in the Cloudinary console.
+- All other code (product cards, detail pages, image gallery) works unchanged —
+  they just render image URLs, which now point to Cloudinary's CDN instead of
+  Firebase Storage signed URLs.
