@@ -1,0 +1,129 @@
+// Prisma schema for CampusKart
+// Mirrors the requested Firestore data structure on SQLite.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  name        String
+  photo       String?
+  phone       String?
+  collegeId   String?
+  collegeName String?
+  city        String?
+  state       String?
+  onboarded   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model College {
+  id        String   @id @default(cuid())
+  name      String
+  city      String
+  state     String
+  createdAt DateTime @default(now())
+
+  @@unique([name, state])
+}
+
+model Product {
+  id           String   @id @default(cuid())
+  title        String
+  description  String
+  price        Float
+  images       String   @default("[]") // JSON array of URLs
+  category     String
+  condition    String
+  sellerId     String
+  sellerName   String
+  collegeId    String?
+  collegeName  String?
+  status       String   @default("ACTIVE") // ACTIVE | SOLD
+  bumpedAt     DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([collegeId])
+  @@index([category])
+  @@index([status])
+}
+
+model WritingPost {
+  id           String   @id @default(cuid())
+  type         String   // NEED_WRITER | CAN_WRITE
+  title        String
+  subject      String
+  description  String
+  pageCount    Int?
+  deadline     DateTime?
+  pricePerPage Float
+  totalPrice   Float?
+  subjects     String   @default("[]") // JSON array (for CAN_WRITE)
+  turnaround   String?
+  userId       String
+  userName     String
+  collegeId    String?
+  collegeName  String?
+  status       String   @default("OPEN") // OPEN | IN_PROGRESS | COMPLETED
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([type])
+  @@index([collegeId])
+}
+
+model Conversation {
+  id            String   @id @default(cuid())
+  participants  String   @default("[]") // JSON array of userIds
+  contextType   String   // PRODUCT | WRITING
+  contextId     String
+  contextTitle  String
+  lastMessage   String   @default("")
+  lastMessageAt DateTime @default(now())
+  lastSenderId  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([contextId])
+}
+
+model Message {
+  id              String   @id @default(cuid())
+  conversationId  String
+  senderId        String
+  senderName      String
+  content         String
+  read            Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  @@index([conversationId])
+}
+
+// Per-user unread counters for conversations
+model ConversationRead {
+  id              String   @id @default(cuid())
+  conversationId  String
+  userId          String
+  lastReadAt      DateTime @default(now())
+
+  @@unique([conversationId, userId])
+}
+
+model Report {
+  id         String   @id @default(cuid())
+  productId  String
+  reporterId String
+  reason     String
+  createdAt  DateTime @default(now())
+
+  @@index([productId])
+}
