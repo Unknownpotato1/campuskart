@@ -5,15 +5,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Loader2, GraduationCap, User } from "lucide-react"
+import { Loader2, GraduationCap, User, AlertCircle } from "lucide-react"
 import { useAuth } from "@/store/auth-store"
 import { useToast } from "@/hooks/use-toast"
+import { isFirebaseConfigured, signInWithGoogle } from "@/lib/firebase-client"
 
 interface AuthModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
+// Demo accounts — only used when Firebase is NOT configured (local testing).
 const DEMO_ACCOUNTS = [
   { name: "Aarav Sharma", email: "aarav.sharma@student.integraluniversity.ac.in" },
   { name: "Priya Verma", email: "priya.verma@student.iitb.ac.in" },
@@ -27,43 +29,62 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const handleGoogleDemo = async (acc?: { name: string; email: string }) => {
+  const finishLogin = async (payload: Record<string, unknown>) => {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.error || "Login failed")
+    }
+    await fetchUser()
+  }
+
+  const handleGoogleFirebase = async () => {
     setLoading(true)
+    setError(null)
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: acc?.name || name,
-          email: acc?.email || email,
-          photo: null,
-        }),
+      const idToken = await signInWithGoogle()
+      await finishLogin({ idToken })
+      toast({ title: "Signed in", description: "Welcome to CampusKart!" })
+      onOpenChange(false)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Google sign-in failed."
+      // Firebase auth/popup-closed-by-user etc. — show inline, not a toast spam.
+      if (msg.includes("popup") || msg.includes("cancelled")) {
+        setError("Sign-in cancelled.")
+      } else {
+        setError(msg)
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Simulated login (demo accounts) — only available when Firebase is NOT set up.
+  const handleSimulated = async (acc?: { name: string; email: string }) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await finishLogin({
+        name: acc?.name || name,
+        email: acc?.email || email,
+        photo: null,
       })
-      if (!res.ok) throw new Error("Login failed")
-      await fetchUser()
       toast({ title: "Signed in", description: "Welcome to CampusKart!" })
       onOpenChange(false)
       setName("")
       setEmail("")
       setMode("google")
     } catch (e) {
-      toast({
-        title: "Sign-in failed",
-        description: e instanceof Error ? e.message : "Please try again.",
-        variant: "destructive",
-      })
+      setError(e instanceof Error ? e.message : "Please try again.")
     } finally {
       setLoading(false)
     }
-  }
-
-  const handleCustom = async () => {
-    if (!name.trim() || !email.trim()) {
-      toast({ title: "Missing details", description: "Please enter your name and email.", variant: "destructive" })
-      return
-    }
-    await handleGoogleDemo()
   }
 
   return (
@@ -79,57 +100,95 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
           </DialogDescription>
         </DialogHeader>
 
+        {error && (
+          <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
         {mode === "google" ? (
           <div className="space-y-4">
-            <Button
-              type="button"
-              className="w-full"
-              size="lg"
-              onClick={() => handleGoogleDemo()}
-              disabled={loading}
-            >
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <GoogleIcon className="mr-2 h-4 w-4" />}
-              Continue with Google
-            </Button>
-
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">Quick demo accounts</span>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              {DEMO_ACCOUNTS.map((acc) => (
-                <button
-                  key={acc.email}
+            {isFirebaseConfigured ? (
+              /* ── Real Firebase Google Sign-In ── */
+              <>
+                <Button
                   type="button"
-                  onClick={() => handleGoogleDemo(acc)}
+                  className="w-full"
+                  size="lg"
+                  onClick={handleGoogleFirebase}
                   disabled={loading}
-                  className="flex w-full items-center gap-3 rounded-lg border border-border bg-card p-3 text-left transition hover:border-primary hover:bg-accent disabled:opacity-50"
                 >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-                    <User className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{acc.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">{acc.email}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
+                  {loading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <GoogleIcon className="mr-2 h-4 w-4" />
+                  )}
+                  Continue with Google
+                </Button>
+                <p className="text-center text-xs text-muted-foreground">
+                  Secure Google sign-in powered by Firebase.
+                </p>
+              </>
+            ) : (
+              /* ── Demo mode (Firebase not configured) ── */
+              <>
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                  <strong>Demo mode:</strong> Firebase isn&apos;t configured yet. Add the{" "}
+                  <code className="rounded bg-amber-500/20 px-1">NEXT_PUBLIC_FIREBASE_*</code> keys to{" "}
+                  <code className="rounded bg-amber-500/20 px-1">.env</code> to enable real Google login.
+                </div>
+                <Button
+                  type="button"
+                  className="w-full"
+                  size="lg"
+                  onClick={() => handleSimulated()}
+                  disabled={loading}
+                >
+                  {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <GoogleIcon className="mr-2 h-4 w-4" />}
+                  Continue with Google (simulated)
+                </Button>
 
-            <p className="text-center text-xs text-muted-foreground">
-              <button
-                type="button"
-                className="underline hover:text-primary"
-                onClick={() => setMode("custom")}
-              >
-                Use a custom name &amp; email instead
-              </button>
-            </p>
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-background px-2 text-muted-foreground">Quick demo accounts</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {DEMO_ACCOUNTS.map((acc) => (
+                    <button
+                      key={acc.email}
+                      type="button"
+                      onClick={() => handleSimulated(acc)}
+                      disabled={loading}
+                      className="flex w-full items-center gap-3 rounded-lg border border-border bg-card p-3 text-left transition hover:border-primary hover:bg-accent disabled:opacity-50"
+                    >
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
+                        <User className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{acc.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">{acc.email}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                <p className="text-center text-xs text-muted-foreground">
+                  <button
+                    type="button"
+                    className="underline hover:text-primary"
+                    onClick={() => setMode("custom")}
+                  >
+                    Use a custom name &amp; email instead
+                  </button>
+                </p>
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
@@ -147,16 +206,17 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
                 placeholder="you@college.ac.in"
               />
             </div>
-            <Button className="w-full" size="lg" onClick={handleCustom} disabled={loading}>
+            <Button
+              className="w-full"
+              size="lg"
+              onClick={() => handleSimulated()}
+              disabled={loading}
+            >
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <GraduationCap className="mr-2 h-4 w-4" />}
               Continue
             </Button>
             <p className="text-center text-xs text-muted-foreground">
-              <button
-                type="button"
-                className="underline hover:text-primary"
-                onClick={() => setMode("google")}
-              >
+              <button type="button" className="underline hover:text-primary" onClick={() => setMode("google")}>
                 Back to Google sign-in
               </button>
             </p>

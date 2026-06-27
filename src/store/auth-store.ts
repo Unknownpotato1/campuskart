@@ -39,6 +39,13 @@ export const useAuth = create<AuthState>((set) => ({
     }
   },
   logout: async () => {
+    try {
+      // Sign out of the Firebase client session (if it was used).
+      const { signOutFirebase } = await import("@/lib/firebase-client")
+      await signOutFirebase()
+    } catch {
+      /* ignore — Firebase may not be configured */
+    }
     await fetch("/api/auth/logout", { method: "POST" })
     set({ user: null })
   },

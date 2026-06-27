@@ -477,3 +477,38 @@ Stage Summary:
   structure) with cookie-session auth simulating Google Sign-In and polling-based
   chat, because the sandbox has no Firebase credentials. README documents the
   1:1 migration path to Firebase.
+
+---
+Task ID: 9
+Agent: main (orchestrator)
+Task: Replace simulated Google Sign-In with real Firebase Auth (Google provider), server-side ID-token verification, graceful demo fallback when Firebase isn't configured.
+
+Work Log:
+- Installed `firebase` (client SDK) and `jose` (server-side JWT verification).
+- Created `src/lib/firebase-client.ts` — initializes the Firebase client app from
+  `NEXT_PUBLIC_FIREBASE_*` env vars; exports `isFirebaseConfigured`,
+  `signInWithGoogle()` (popup + `prompt: select_account`), `signOutFirebase()`.
+- Created `src/lib/firebase-admin.ts` — verifies Firebase ID tokens using Google's
+  public JWKS (`jose` + createRemoteJWKSet), validating issuer + audience against
+  the project ID. NO service-account JSON required.
+- Rewrote `src/app/api/auth/login/route.ts`:
+  - `{ idToken }` → verifies via JWKS, extracts email/name/photo, upserts user,
+    sets session cookie.
+  - Simulated `{ name, email, photo }` fallback ONLY allowed when Firebase env
+    vars are NOT set (so real auth can't be bypassed once configured).
+- Rewrote `src/components/site/auth-modal.tsx`:
+  - When Firebase IS configured → single "Continue with Google" button using
+    real `signInWithPopup`; inline error display for cancelled popups.
+  - When NOT configured → amber "Demo mode" banner explaining how to add keys,
+    plus the demo-account buttons (for local testing).
+- Updated `src/store/auth-store.ts` `logout()` to also `signOutFirebase()` so the
+  Firebase client session is cleared on sign-out.
+- Lint passes (0 errors). Browser-verified the demo-mode banner renders with the
+  setup hint when env vars are absent.
+
+Stage Summary:
+- The login system is now real-Firebase-ready. The user just needs to paste the 6
+  NEXT_PUBLIC_FIREBASE_* values into `.env` and enable the Google sign-in provider
+  + authorized domains in the Firebase console. Once configured, "Continue with
+  Google" does a genuine popup sign-in and the server verifies the token. Until
+  then, the app shows a clear "Demo mode" banner and offers demo accounts.
