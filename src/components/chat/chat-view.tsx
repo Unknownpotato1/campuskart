@@ -24,6 +24,7 @@ import { EmptyState } from "@/components/shared/empty-state"
 import { ChatSkeleton } from "@/components/shared/loading-skeletons"
 import { cn } from "@/lib/utils"
 import type { Conversation, Message } from "@/lib/types"
+import { subscribeToMessages, subscribeToConversations } from "@/lib/firebase-client"
 
 type ConversationWithMeta = Conversation & { unread: number; otherName?: string }
 
@@ -68,6 +69,7 @@ export function ChatView() {
 
 function ConversationList({ selectedId }: { selectedId: string | null }) {
   const { navigate } = useNav()
+  const { user } = useAuth()
   const [convos, setConvos] = useState<ConversationWithMeta[] | null>(null)
   const [search, setSearch] = useState("")
 
@@ -84,12 +86,38 @@ function ConversationList({ selectedId }: { selectedId: string | null }) {
       }
     }
     load()
-    const t = setInterval(load, 5000)
+
+    // Real-time: subscribe to the user's conversations and refetch the
+    // enriched list whenever Firestore reports a change. Falls back to a
+    // 5s poll if the listener can't start (e.g. Firestore not configured
+    // or security rules block the query).
+    let unsub: (() => void) | null = null
+    let pollTimer: ReturnType<typeof setInterval> | null = null
+    try {
+      if (user?.id) {
+        unsub = subscribeToConversations(
+          user.id,
+          () => {
+            if (active) load()
+          },
+          () => {
+            if (!active || pollTimer) return
+            pollTimer = setInterval(load, 5000)
+          }
+        )
+      } else {
+        pollTimer = setInterval(load, 5000)
+      }
+    } catch {
+      pollTimer = setInterval(load, 5000)
+    }
+
     return () => {
       active = false
-      clearInterval(t)
+      if (unsub) unsub()
+      if (pollTimer) clearInterval(pollTimer)
     }
-  }, [])
+  }, [user?.id])
 
   const handleOpen = (id: string) => {
     navigate("chat", { conv: id })
@@ -278,69 +306,103 @@ function MessagesPane({
     isNearBottomRef.current = true
   }, [convId])
 
-  // Poll messages every 3s (Firestore-listener simulation).
+  // Real-time messages via Firestore onSnapshot (falls back to polling if
+  // Firestore isn't configured / listener errors — e.g. security rules).
   useEffect(() => {
     let active = true
-    const load = async () => {
-      if (notFoundRef.current) return
-      try {
-        const res = await fetch(`/api/conversations/${convId}/messages`)
-        if (!active || !res.ok) return
-        const data = await res.json()
-        const serverMessages: Message[] = data.messages || []
+    let pollTimer: ReturnType<typeof setInterval> | null = null
 
-        // Drop optimistic entries that the server has now confirmed.
-        const stillPending: Message[] = []
-        for (const [tempId, msg] of pendingRef.current.entries()) {
-          const confirmed = serverMessages.some(
-            (sm) =>
-              sm.senderId === msg.senderId &&
-              sm.content === msg.content &&
-              Math.abs(
-                new Date(sm.createdAt).getTime() - new Date(msg.createdAt).getTime()
-              ) < 30000
-          )
-          if (confirmed) pendingRef.current.delete(tempId)
-          else stillPending.push(msg)
-        }
+    const applyServerMessages = (serverMessages: Message[]) => {
+      if (!active) return
+      // Drop optimistic entries that the server has now confirmed.
+      const stillPending: Message[] = []
+      for (const [tempId, msg] of pendingRef.current.entries()) {
+        const confirmed = serverMessages.some(
+          (sm) =>
+            sm.senderId === msg.senderId &&
+            sm.content === msg.content &&
+            Math.abs(
+              new Date(sm.createdAt).getTime() - new Date(msg.createdAt).getTime()
+            ) < 30000
+        )
+        if (confirmed) pendingRef.current.delete(tempId)
+        else stillPending.push(msg)
+      }
 
-        // Merge: server messages first, then any still-pending optimistic
-        // ones inserted in chronological order (deduped by id).
-        const merged = [...serverMessages]
-        for (const pm of stillPending) {
-          if (merged.some((m) => m.id === pm.id)) continue
-          const idx = merged.findIndex(
-            (m) => new Date(m.createdAt) > new Date(pm.createdAt)
-          )
-          if (idx === -1) merged.push(pm)
-          else merged.splice(idx, 0, pm)
-        }
-        setMessages(merged)
+      const merged = [...serverMessages]
+      for (const pm of stillPending) {
+        if (merged.some((m) => m.id === pm.id)) continue
+        const idx = merged.findIndex(
+          (m) => new Date(m.createdAt) > new Date(pm.createdAt)
+        )
+        if (idx === -1) merged.push(pm)
+        else merged.splice(idx, 0, pm)
+      }
+      setMessages(merged)
 
-        // If any message from the other party is still unread, mark the
-        // conversation as read for me (this also clears the header badge).
-        const uid = userIdRef.current
-        if (uid) {
-          const hasUnreadFromOthers = serverMessages.some(
-            (m) => m.senderId !== uid && !m.read
+      const uid = userIdRef.current
+      if (uid) {
+        const hasUnreadFromOthers = serverMessages.some(
+          (m) => m.senderId !== uid && !m.read
+        )
+        if (hasUnreadFromOthers) {
+          fetch(`/api/conversations/${convId}/read`, { method: "POST" }).catch(
+            () => {
+              /* ignore */
+            }
           )
-          if (hasUnreadFromOthers) {
-            fetch(`/api/conversations/${convId}/read`, { method: "POST" }).catch(
-              () => {
-                /* ignore */
-              }
-            )
-          }
         }
-      } catch {
-        /* ignore transient errors */
       }
     }
-    load()
-    const t = setInterval(load, 3000)
+
+    // Try the real-time Firestore listener first.
+    let unsub: (() => void) | null = null
+    let usingListener = false
+    try {
+      unsub = subscribeToMessages(
+        convId,
+        applyServerMessages,
+        () => {
+          // Listener errored (e.g. permissions) → fall back to polling.
+          if (!active || pollTimer) return
+          pollTimer = setInterval(async () => {
+            if (notFoundRef.current) return
+            try {
+              const res = await fetch(`/api/conversations/${convId}/messages`)
+              if (!active || !res.ok) return
+              const data = await res.json()
+              applyServerMessages(data.messages || [])
+            } catch {
+              /* ignore */
+            }
+          }, 3000)
+        }
+      )
+      usingListener = true
+    } catch {
+      // firebase-client not available → polling fallback below.
+    }
+
+    if (!usingListener) {
+      const load = async () => {
+        if (notFoundRef.current) return
+        try {
+          const res = await fetch(`/api/conversations/${convId}/messages`)
+          if (!active || !res.ok) return
+          const data = await res.json()
+          applyServerMessages(data.messages || [])
+        } catch {
+          /* ignore */
+        }
+      }
+      load()
+      pollTimer = setInterval(load, 3000)
+    }
+
     return () => {
       active = false
-      clearInterval(t)
+      if (unsub) unsub()
+      if (pollTimer) clearInterval(pollTimer)
     }
   }, [convId])
 

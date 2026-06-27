@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server"
-import { db } from "@/lib/db"
+import { listColleges } from "@/lib/firestore"
 
 // GET /api/colleges — list all colleges
 export async function GET() {
-  const colleges = await db.college.findMany({ orderBy: [{ state: "asc" }, { name: "asc" }] })
+  const colleges = await listColleges()
   return NextResponse.json({ colleges })
 }

@@ -3,6 +3,9 @@ import {
   adminBucket,
   isFirebaseAdminConfigured,
 } from "@/lib/firebase-server"
+
+// Re-export for convenience.
+export { isFirebaseAdminConfigured } from "@/lib/firebase-server"
 import type {
   Product,
   WritingPost,
@@ -120,8 +123,14 @@ export async function getCollege(id: string): Promise<College | null> {
 }
 
 export async function listColleges(): Promise<College[]> {
-  const snap = await adminDb.collection("colleges").orderBy("state").orderBy("name").get()
-  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<College, "id">) }))
+  // Avoid a composite (state, name) index: fetch all and sort in memory.
+  const snap = await adminDb.collection("colleges").get()
+  const colleges = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<College, "id">) }))
+  colleges.sort((a, b) => {
+    if (a.state !== b.state) return a.state.localeCompare(b.state)
+    return a.name.localeCompare(b.name)
+  })
+  return colleges
 }
 
 export async function findCollegeByName(name: string, state: string): Promise<College | null> {
@@ -198,71 +207,50 @@ export async function listProducts(opts: {
   cursor?: string
 }): Promise<{ products: Product[]; nextCursor: string | null }> {
   const limit = Math.min(Math.max(opts.limit || 12, 1), 24)
-  const hasEqualityFilters = Boolean(opts.category || opts.condition || opts.collegeId)
 
-  // When equality filters are active, Firestore would need composite indexes for
-  // each combination. To keep the app index-free and robust, we fetch a larger
-  // batch ordered by bumpedAt and apply the equality + text filters in-memory.
-  if (hasEqualityFilters || opts.q) {
-    let q: FirebaseFirestore.Query = adminDb.collection("products").orderBy("bumpedAt", "desc")
-    if (opts.category) q = q.where("category", "==", opts.category)
-    if (opts.condition) q = q.where("condition", "==", opts.condition)
-    if (opts.collegeId) q = q.where("collegeId", "==", opts.collegeId)
-    // NOTE: (category, condition, collegeId, bumpedAt) composite indexes are
-    // auto-created by Firestore for single-field queries; the combination of
-    // multiple equality filters + orderBy on bumpedAt DOES require a composite
-    // index. To avoid that, we drop orderBy when multiple equality filters are
-    // present and sort in memory.
-    if ((opts.category ? 1 : 0) + (opts.condition ? 1 : 0) + (opts.collegeId ? 1 : 0) >= 2) {
-      q = adminDb.collection("products")
-      if (opts.category) q = q.where("category", "==", opts.category)
-      if (opts.condition) q = q.where("condition", "==", opts.condition)
-      if (opts.collegeId) q = q.where("collegeId", "==", opts.collegeId)
-    }
-    const snap = await q.limit(100).get()
-    let products = snap.docs.map((d) => toProduct(d.id, d.data() as ProductDoc))
-    if (opts.q) {
-      const needle = opts.q.toLowerCase()
-      products = products.filter(
-        (p) =>
-          p.title.toLowerCase().includes(needle) ||
-          p.description.toLowerCase().includes(needle)
-      )
-    }
-    products.sort((a, b) => (a.bumpedAt < b.bumpedAt ? 1 : -1))
-    return { products: products.slice(0, limit), nextCursor: null }
+  // To stay fully composite-index-free, we never combine equality filters with
+  // orderBy. We fetch (optionally filtered by equality) without orderBy, then
+  // sort + paginate in memory.
+  let q: FirebaseFirestore.Query = adminDb.collection("products")
+  if (opts.category) q = q.where("category", "==", opts.category)
+  if (opts.condition) q = q.where("condition", "==", opts.condition)
+  if (opts.collegeId) q = q.where("collegeId", "==", opts.collegeId)
+  const snap = await q.limit(100).get()
+  let products = snap.docs.map((d) => toProduct(d.id, d.data() as ProductDoc))
+  if (opts.q) {
+    const needle = opts.q.toLowerCase()
+    products = products.filter(
+      (p) =>
+        p.title.toLowerCase().includes(needle) ||
+        p.description.toLowerCase().includes(needle)
+    )
   }
+  // Sort by bumpedAt desc in memory.
+  products.sort((a, b) => (a.bumpedAt < b.bumpedAt ? 1 : a.bumpedAt > b.bumpedAt ? -1 : 0))
 
-  // No filters → clean cursor pagination on bumpedAt.
-  let q: FirebaseFirestore.Query = adminDb.collection("products").orderBy("bumpedAt", "desc")
+  // Cursor pagination (in-memory) on bumpedAt.
   if (opts.cursor) {
-    // cursor is the bumpedAt ISO string of the last doc; fetch that doc as the
-    // startAfter anchor.
-    const anchorSnap = await adminDb
-      .collection("products")
-      .where("bumpedAt", "==", opts.cursor)
-      .limit(1)
-      .get()
-    if (!anchorSnap.empty) {
-      q = q.startAfter(anchorSnap.docs[0])
-    }
+    const idx = products.findIndex((p) => p.bumpedAt === opts.cursor)
+    if (idx >= 0) products = products.slice(idx + 1)
   }
-  const snap = await q.limit(limit + 1).get()
-  const docs = snap.docs
-  const hasMore = docs.length > limit
-  const slice = hasMore ? docs.slice(0, limit) : docs
-  const products = slice.map((d) => toProduct(d.id, d.data() as ProductDoc))
-  const nextCursor =
-    hasMore && slice.length > 0
-      ? (slice[slice.length - 1].data() as ProductDoc).bumpedAt
-      : null
-  return { products, nextCursor }
+
+  const hasMore = products.length > limit
+  const slice = products.slice(0, limit)
+  const nextCursor = hasMore && slice.length > 0 ? slice[slice.length - 1].bumpedAt : null
+  return { products: slice, nextCursor }
 }
 
 export async function getProduct(id: string): Promise<Product | null> {
   const snap = await adminDb.collection("products").doc(id).get()
   if (!snap.exists) return null
   return toProduct(snap.id, snap.data() as ProductDoc)
+}
+
+export async function listProductsBySeller(sellerId: string): Promise<Product[]> {
+  const snap = await adminDb.collection("products").where("sellerId", "==", sellerId).get()
+  const products = snap.docs.map((d) => toProduct(d.id, d.data() as ProductDoc))
+  products.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+  return products
 }
 
 export async function createProduct(data: {
@@ -398,7 +386,7 @@ export async function listWriting(opts: {
   let q: FirebaseFirestore.Query = adminDb.collection("writingPosts")
   if (opts.type) q = q.where("type", "==", opts.type)
   if (opts.collegeId) q = q.where("collegeId", "==", opts.collegeId)
-  q = q.orderBy("createdAt", "desc")
+  // No orderBy here (would need a composite index with the equality filters).
   const snap = await q.limit(100).get()
   let posts = snap.docs.map((d) => toWriting(d.id, d.data() as WritingDoc))
   if (opts.subject) {
@@ -414,6 +402,8 @@ export async function listWriting(opts: {
     const d = opts.deadline
     posts = posts.filter((p) => p.deadline && p.deadline >= d)
   }
+  // Sort by createdAt desc in memory.
+  posts.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))
   return posts
 }
 
@@ -421,6 +411,13 @@ export async function getWriting(id: string): Promise<WritingPost | null> {
   const snap = await adminDb.collection("writingPosts").doc(id).get()
   if (!snap.exists) return null
   return toWriting(snap.id, snap.data() as WritingDoc)
+}
+
+export async function listWritingByUser(userId: string): Promise<WritingPost[]> {
+  const snap = await adminDb.collection("writingPosts").where("userId", "==", userId).get()
+  const posts = snap.docs.map((d) => toWriting(d.id, d.data() as WritingDoc))
+  posts.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+  return posts
 }
 
 export async function createWriting(data: Omit<WritingDoc, "status" | "createdAt" | "updatedAt">): Promise<WritingPost> {
@@ -486,10 +483,11 @@ function toConversation(id: string, d: ConversationDoc): Conversation {
 }
 
 export async function listConversations(userId: string): Promise<Array<Conversation & { unread: number; otherName: string | null }>> {
+  // array-contains + orderBy would need a composite index; fetch without
+  // orderBy and sort in memory.
   const snap = await adminDb
     .collection("conversations")
     .where("participants", "array-contains", userId)
-    .orderBy("lastMessageAt", "desc")
     .get()
   const result: Array<Conversation & { unread: number; otherName: string | null }> = []
   for (const d of snap.docs) {
@@ -503,18 +501,28 @@ export async function listConversations(userId: string): Promise<Array<Conversat
     }
     result.push({ ...conv, unread, otherName })
   }
+  // Sort by lastMessageAt desc in memory.
+  result.sort((a, b) =>
+    a.lastMessageAt < b.lastMessageAt ? 1 : a.lastMessageAt > b.lastMessageAt ? -1 : 0
+  )
   return result
 }
 
 async function getConversationUnread(convId: string, userId: string): Promise<number> {
+  // (senderId !=, read ==) would need a composite index; fetch messages not
+  // sent by user and count unread in memory.
   const snap = await adminDb
     .collection("conversations")
     .doc(convId)
     .collection("messages")
     .where("senderId", "!=", userId)
-    .where("read", "==", false)
     .get()
-  return snap.size
+  let count = 0
+  for (const d of snap.docs) {
+    const data = d.data() as MessageDoc
+    if (data.read === false) count++
+  }
+  return count
 }
 
 export async function getConversation(
@@ -638,17 +646,18 @@ export async function sendMessage(params: {
 }
 
 export async function markRead(convId: string, userId: string): Promise<void> {
-  // Mark all messages not sent by this user as read.
+  // Mark all messages not sent by this user as read. (senderId !=, read ==)
+  // would need a composite index; fetch by senderId != and filter read in memory.
   const snap = await adminDb
     .collection("conversations")
     .doc(convId)
     .collection("messages")
     .where("senderId", "!=", userId)
-    .where("read", "==", false)
     .get()
   const batch = adminDb.batch()
   for (const d of snap.docs) {
-    batch.update(d.ref, { read: true })
+    const data = d.data() as MessageDoc
+    if (data.read === false) batch.update(d.ref, { read: true })
   }
   await batch.commit()
 }

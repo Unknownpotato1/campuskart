@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
-import { db } from "@/lib/db"
 import { setSession } from "@/lib/session"
 import { verifyFirebaseIdToken } from "@/lib/firebase-admin"
+import { upsertUserFromFirebase, isFirebaseAdminConfigured } from "@/lib/firestore"
+import { db } from "@/lib/db"
 
-const isFirebaseConfigured = Boolean(
+const isFirebaseClientConfigured = Boolean(
   process.env.NEXT_PUBLIC_FIREBASE_API_KEY &&
     process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID &&
     process.env.NEXT_PUBLIC_FIREBASE_APP_ID
@@ -11,15 +12,21 @@ const isFirebaseConfigured = Boolean(
 
 // POST /api/auth/login
 // - Real Firebase login:  body { idToken }  → verifies the Google ID token
-//   server-side via Google's public JWKS, then creates/finds the user.
+//   server-side via Google's public JWKS, then upserts the user in Firestore.
 // - Fallback (only when Firebase env vars are NOT set): body { name, email, photo? }
-//   simulates a Google sign-in for local/demo use.
+//   simulates a Google sign-in for local/demo use (stores in SQLite).
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
 
-    // ── Real Firebase path ────────────────────────────────────────────────
+    // ── Real Firebase path (Firestore-backed) ─────────────────────────────
     if (body?.idToken && typeof body.idToken === "string") {
+      if (!isFirebaseAdminConfigured) {
+        return NextResponse.json(
+          { error: "Server not configured for Firebase Admin. Set FIREBASE_SERVICE_ACCOUNT." },
+          { status: 500 }
+        )
+      }
       const verified = await verifyFirebaseIdToken(body.idToken)
       if (!verified || !verified.email) {
         return NextResponse.json({ error: "Invalid Google credentials" }, { status: 401 })
@@ -28,22 +35,19 @@ export async function POST(req: NextRequest) {
       const name = (verified.name || email.split("@")[0]).trim()
       const photo = verified.photo || null
 
-      let user = await db.user.findUnique({ where: { email } })
-      if (!user) {
-        user = await db.user.create({ data: { email, name, photo } })
-      } else if (user.name !== name || user.photo !== photo) {
-        user = await db.user.update({
-          where: { id: user.id },
-          data: { name, photo: photo ?? user.photo },
-        })
-      }
+      const user = await upsertUserFromFirebase({
+        uid: verified.uid,
+        email,
+        name,
+        photo,
+      })
 
       await setSession(user.id, user.email)
       return NextResponse.json({ user })
     }
 
     // ── Simulated fallback (demo accounts) — only when Firebase not set up ─
-    if (!isFirebaseConfigured) {
+    if (!isFirebaseClientConfigured) {
       const { name, email, photo } = body
       if (!email || !name) {
         return NextResponse.json({ error: "Name and email are required" }, { status: 400 })
@@ -51,6 +55,7 @@ export async function POST(req: NextRequest) {
       const cleanEmail = String(email).trim().toLowerCase()
       const cleanName = String(name).trim()
 
+      // Demo-mode users live in SQLite (no Firebase).
       let user = await db.user.findUnique({ where: { email: cleanEmail } })
       if (!user) {
         user = await db.user.create({

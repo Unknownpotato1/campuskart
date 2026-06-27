@@ -1,5 +1,5 @@
 import { cookies } from "next/headers"
-import { db } from "./db"
+import { getUser, type UserDoc } from "./firestore"
 
 export const SESSION_COOKIE = "ck_session"
 
@@ -62,14 +62,14 @@ export async function clearSession() {
   store.delete(SESSION_COOKIE)
 }
 
-export async function getCurrentUser() {
+export async function getCurrentUser(): Promise<UserDoc | null> {
   try {
     const store = await cookies()
     const token = store.get(SESSION_COOKIE)?.value
     if (!token) return null
     const payload = await verifySessionToken(token)
     if (!payload) return null
-    const user = await db.user.findUnique({ where: { id: payload.uid } })
+    const user = await getUser(payload.uid)
     return user
   } catch {
     return null
@@ -77,4 +77,4 @@ export async function getCurrentUser() {
 }
 
 // For client components to read current user via API
-export type CurrentUser = NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>
+export type CurrentUser = UserDoc

@@ -2,6 +2,16 @@
 
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app"
 import { getAuth, GoogleAuthProvider, type Auth } from "firebase/auth"
+import {
+  getFirestore,
+  collection,
+  query,
+  where,
+  orderBy,
+  onSnapshot,
+  type Firestore,
+  type Unsubscribe,
+} from "firebase/firestore"
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -19,18 +29,30 @@ export const isFirebaseConfigured = Boolean(
 let _app: FirebaseApp | null = null
 let _auth: Auth | null = null
 let _provider: GoogleAuthProvider | null = null
+let _db: Firestore | null = null
 
 if (isFirebaseConfigured) {
   _app = getApps().length ? getApp() : initializeApp(firebaseConfig)
   _auth = getAuth(_app)
   _provider = new GoogleAuthProvider()
-  // Always show the account chooser.
   _provider.setCustomParameters({ prompt: "select_account" })
+  _db = getFirestore(_app)
 }
 
 export const firebaseApp = _app
 export const firebaseAuth = _auth
 export const googleProvider = _provider
+export const clientDb = _db
+
+export interface ClientMessage {
+  id: string
+  conversationId: string
+  senderId: string
+  senderName: string
+  content: string
+  read: boolean
+  createdAt: string
+}
 
 /** Sign in with Google popup; returns a Firebase ID token. */
 export async function signInWithGoogle(): Promise<string> {
@@ -47,4 +69,75 @@ export async function signOutFirebase(): Promise<void> {
   if (!_auth) return
   const { signOut } = await import("firebase/auth")
   await signOut(_auth)
+}
+
+/**
+ * Subscribe to messages in a conversation in real time using Firestore
+ * onSnapshot. Returns an unsubscribe function.
+ */
+export function subscribeToMessages(
+  convId: string,
+  onMessages: (messages: ClientMessage[]) => void,
+  onError?: (err: Error) => void
+): Unsubscribe {
+  if (!clientDb) {
+    onError?.(new Error("Firestore not configured"))
+    return () => {}
+  }
+  const q = query(
+    collection(clientDb, "conversations", convId, "messages"),
+    orderBy("createdAt", "asc")
+  )
+  return onSnapshot(
+    q,
+    (snap) => {
+      const all = snap.docs.map((d) => {
+        const data = d.data() as Record<string, unknown>
+        const createdAtRaw = data.createdAt
+        let createdAt: string
+        if (typeof createdAtRaw === "string") {
+          createdAt = createdAtRaw
+        } else if (createdAtRaw && typeof createdAtRaw === "object" && "toDate" in createdAtRaw) {
+          // Firestore Timestamp
+          createdAt = (createdAtRaw as { toDate: () => Date }).toDate().toISOString()
+        } else {
+          createdAt = new Date().toISOString()
+        }
+        return {
+          id: d.id,
+          conversationId: convId,
+          senderId: String(data.senderId ?? ""),
+          senderName: String(data.senderName ?? ""),
+          content: String(data.content ?? ""),
+          read: Boolean(data.read),
+          createdAt,
+        }
+      })
+      // Keep only the last 200 to match the REST API behaviour.
+      onMessages(all.slice(-200))
+    },
+    (err) => onError?.(err as Error)
+  )
+}
+
+/**
+ * Subscribe to the current user's conversations in real time as a "something
+ * changed" trigger (the enriched list — with unread/otherName — is fetched
+ * via the REST API on each change).
+ */
+export function subscribeToConversations(
+  userId: string,
+  onChange: () => void,
+  onError?: (err: Error) => void
+): Unsubscribe {
+  if (!clientDb) {
+    onError?.(new Error("Firestore not configured"))
+    return () => {}
+  }
+  const q = query(collection(clientDb, "conversations"), where("participants", "array-contains", userId))
+  return onSnapshot(
+    q,
+    () => onChange(),
+    (err) => onError?.(err as Error)
+  )
 }

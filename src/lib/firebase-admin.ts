@@ -32,7 +32,7 @@ export async function verifyFirebaseIdToken(idToken: string): Promise<VerifiedFi
 
     return {
       uid: String(payload.sub || ""),
-      email: payload.email ?? null,
+      email: (payload.email as string) ?? null,
       name: (payload.name as string) ?? null,
       photo: (payload.picture as string) ?? null,
       emailVerified: Boolean(payload.email_verified),

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUser } from "@/lib/session"
-import { writeFile, mkdir } from "fs/promises"
-import path from "path"
+import { uploadImageToStorage } from "@/lib/firestore"
 import { randomUUID } from "crypto"
 
 // POST /api/upload — multipart form with field "file" (single) — returns { url }
+// Uploads to Firebase Storage and returns a signed URL.
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser()
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -25,15 +25,15 @@ export async function POST(req: NextRequest) {
   }
 
   const ext = file.name.split(".").pop()?.toLowerCase() || "jpg"
-  const filename = `${user.id}-${randomUUID()}.${ext}`
-  const uploadDir = path.join(process.cwd(), "public", "uploads")
-  try {
-    await mkdir(uploadDir, { recursive: true })
-  } catch {
-    // ignore
-  }
+  const filename = `${randomUUID()}.${ext}`
   const bytes = Buffer.from(await file.arrayBuffer())
-  await writeFile(path.join(uploadDir, filename), bytes)
 
-  return NextResponse.json({ url: `/uploads/${filename}` })
+  const url = await uploadImageToStorage({
+    buffer: bytes,
+    filename,
+    contentType: file.type,
+    userId: user.id,
+  })
+
+  return NextResponse.json({ url })
 }
