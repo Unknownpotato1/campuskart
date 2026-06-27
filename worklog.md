@@ -512,3 +512,48 @@ Stage Summary:
   + authorized domains in the Firebase console. Once configured, "Continue with
   Google" does a genuine popup sign-in and the server verifies the token. Until
   then, the app shows a clear "Demo mode" banner and offers demo accounts.
+
+---
+Task ID: 10 (part 1)
+Agent: main (orchestrator)
+Task: Wire up Firestore + Firebase Storage for the rest of the backend. Part 1 = build the server-side Admin foundation (Firestore + Storage data-access layer + seed script). Part 2 (next turn) = swap all API routes from Prisma → Firestore, seed colleges, test, and add real-time onSnapshot chat.
+
+Work Log:
+- Installed `firebase-admin`.
+- Created `src/lib/firebase-server.ts` — singleton Admin init reading
+  `FIREBASE_SERVICE_ACCOUNT` (JSON string) from env; exports `adminDb`
+  (Firestore), `adminBucket` (Storage), `adminAuth`, `isFirebaseAdminConfigured`.
+  Uses globalThis caching to survive Next.js hot reload. Throws a clear error
+  if the service account is missing.
+- Created `src/lib/firestore.ts` — a complete data-access layer abstracting
+  ALL Firestore + Storage operations, mirroring the existing Prisma contracts:
+  - Users: getUser, upsertUserFromFirebase, updateUser
+  - Colleges: getCollege, listColleges, findCollegeByName, seedCollegesIfEmpty
+  - Products: listProducts (cursor pagination + in-memory filters to avoid
+    composite-index pain), getProduct, createProduct, updateProduct,
+    deleteProduct, bumpProduct (24h cooldown), reportProduct (dedupe)
+  - Writing: listWriting, getWriting, createWriting, updateWriting, deleteWriting
+  - Conversations: listConversations (with unread + otherName),
+    getConversation, findOrCreateConversation, getMessages, sendMessage,
+    markRead, getUnreadCount
+  - Storage: uploadImageToStorage (returns a 10-year signed URL)
+  - Stores images/subjects/participants as native Firestore arrays (no JSON
+    strings); returns data already in the frontend's expected shapes.
+- Created `scripts/seed-firestore.ts` — seeds the 36 colleges into Firestore
+  if the collection is empty.
+- Updated `.env.example` to document `FIREBASE_SERVICE_ACCOUNT`.
+- Fixed TypeScript issues: `Bucket` type derived via ReturnType; `cert()`
+  accepts projectId/clientEmail/privateKey subset.
+- `bunx tsc --noEmit` clean for all new files; `bun run lint` clean; dev server
+  healthy (200). Routes still run on Prisma for now — Part 2 swaps them.
+
+Stage Summary:
+- The Firestore + Storage foundation is built and type-checks. It is NOT yet
+  wired into the API routes (they still use Prisma), so the running app is
+  unchanged and healthy.
+- BLOCKED on the user providing a service account JSON (Firebase Console →
+  Project Settings → Service accounts → Generate new private key). Once pasted
+  into `.env` as `FIREBASE_SERVICE_ACCOUNT`, Part 2 will: seed colleges into
+  Firestore, swap all 15+ API routes from Prisma to the firestore.ts layer,
+  test the full marketplace/writing/chat flow in the browser, and upgrade the
+  chat view to real-time Firestore onSnapshot listeners.
