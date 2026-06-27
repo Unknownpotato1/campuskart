@@ -59,10 +59,16 @@ function initAdmin() {
         "Generate one at Firebase Console → Project Settings → Service accounts → Generate new private key."
     )
   }
-  // Lazy-load firebase-admin only when actually initializing.
+  // Lazy-load firebase-admin only when actually initializing. Using require()
+  // (not static import) keeps the Admin SDK out of the client bundle and out
+  // of API routes that don't use Firestore — critical for Vercel cold starts.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { initializeApp, cert, getApps, getApp } = require("firebase-admin/app")
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { getFirestore } = require("firebase-admin/firestore")
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { getStorage } = require("firebase-admin/storage")
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { getAuth } = require("firebase-admin/auth")
 
   const app = getApps().length

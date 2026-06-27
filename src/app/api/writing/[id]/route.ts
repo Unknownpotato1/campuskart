@@ -1,3 +1,6 @@
+// Force Node.js runtime (firebase-admin needs Node built-ins, not Edge).
+export const runtime = "nodejs"
+
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUser } from "@/lib/session"
 import { getWriting, updateWriting, deleteWriting } from "@/lib/firestore"
