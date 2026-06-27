@@ -1,15 +1,21 @@
-import { initializeApp, cert, getApps, getApp, type App } from "firebase-admin/app"
-import { getFirestore, type Firestore } from "firebase-admin/firestore"
-import { getStorage } from "firebase-admin/storage"
-import { getAuth, type Auth } from "firebase-admin/auth"
+import type { App } from "firebase-admin/app"
+import type { Firestore } from "firebase-admin/firestore"
+import type { Auth } from "firebase-admin/auth"
 
-// `Bucket` type isn't exported directly; derive it from the runtime value.
-type Bucket = ReturnType<ReturnType<typeof getStorage>["bucket"]>
+// `Bucket` type isn't exported directly; derive it lazily.
+type Bucket = ReturnType<
+  ReturnType<typeof import("firebase-admin/storage")["getStorage"]>["bucket"]
+>
 
 // Server-side Firebase Admin access (Firestore + Storage + Auth).
 // Requires a service account JSON in the FIREBASE_SERVICE_ACCOUNT env var.
 // Generate one at:
 //   Firebase Console → Project Settings → Service accounts → Generate new private key
+//
+// IMPORTANT: firebase-admin is loaded LAZILY (only when a route actually
+// calls getAdminDb/getAdminBucket/getAdminAuth). This avoids bundling the
+// Admin SDK (and its Node-only deps) into routes that don't need it, and it
+// keeps the serverless cold-start from crashing on Vercel.
 
 interface ServiceAccountJson {
   type: string
@@ -53,6 +59,12 @@ function initAdmin() {
         "Generate one at Firebase Console → Project Settings → Service accounts → Generate new private key."
     )
   }
+  // Lazy-load firebase-admin only when actually initializing.
+  const { initializeApp, cert, getApps, getApp } = require("firebase-admin/app")
+  const { getFirestore } = require("firebase-admin/firestore")
+  const { getStorage } = require("firebase-admin/storage")
+  const { getAuth } = require("firebase-admin/auth")
+
   const app = getApps().length
     ? getApp()
     : initializeApp({
@@ -69,11 +81,36 @@ function initAdmin() {
   globalForFirebase.__adminAuth = getAuth(app)
 }
 
-initAdmin()
+// Lazy getters — firebase-admin is only loaded when a route uses these.
+export function getAdminDb(): Firestore {
+  initAdmin()
+  return globalForFirebase.__adminDb!
+}
+export function getAdminBucket(): Bucket {
+  initAdmin()
+  return globalForFirebase.__adminBucket!
+}
+export function getAdminAuth(): Auth {
+  initAdmin()
+  return globalForFirebase.__adminAuth!
+}
 
-export const adminApp = globalForFirebase.__adminApp!
-export const adminDb = globalForFirebase.__adminDb!
-export const adminBucket = globalForFirebase.__adminBucket!
-export const adminAuth = globalForFirebase.__adminAuth!
+// Backwards-compatible exports (lazy): these are getters so accessing them
+// triggers init. Most code should use getAdminDb() etc. instead.
+export const adminDb = new Proxy({} as Firestore, {
+  get(_t, prop) {
+    return Reflect.get(getAdminDb() as object, prop)
+  },
+})
+export const adminBucket = new Proxy({} as Bucket, {
+  get(_t, prop) {
+    return Reflect.get(getAdminBucket() as object, prop)
+  },
+})
+export const adminAuth = new Proxy({} as Auth, {
+  get(_t, prop) {
+    return Reflect.get(getAdminAuth() as object, prop)
+  },
+})
 
 export type { Bucket }
