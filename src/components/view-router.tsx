@@ -1,6 +1,7 @@
 "use client"
 
 import { useNav } from "@/hooks/use-nav"
+import { HomeView } from "@/components/marketplace/home-view"
 import { MarketplaceView } from "@/components/marketplace/marketplace-view"
 import { ProductDetailView } from "@/components/marketplace/product-detail-view"
 import { NewListingForm } from "@/components/marketplace/new-listing-form"
@@ -42,6 +43,8 @@ export function ViewRouter() {
 
 function renderView(view: string) {
   switch (view) {
+    case "home":
+      return <HomeView />
     case "marketplace":
       return <MarketplaceView />
     case "product":
@@ -57,6 +60,6 @@ function renderView(view: string) {
     case "profile":
       return <ProfileView />
     default:
-      return <MarketplaceView />
+      return <HomeView />
   }
 }

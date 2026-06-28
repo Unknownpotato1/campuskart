@@ -145,12 +145,25 @@ export interface ConversationRaw {
   updatedAt: string
 }
 
+export type MessageType = "text" | "image" | "file"
+
+export interface MessageAttachment {
+  url: string
+  type: "image" | "file"
+  name: string
+  size: number
+  contentType: string
+}
+
 export interface Message {
   id: string
   conversationId: string
   senderId: string
   senderName: string
+  senderPhoto?: string | null
   content: string
+  type: MessageType
+  attachment?: MessageAttachment | null
   read: boolean
   createdAt: string
 }

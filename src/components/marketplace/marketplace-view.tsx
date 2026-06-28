@@ -56,7 +56,22 @@ export function MarketplaceView() {
   const [error, setError] = useState<string | null>(null)
 
   const sentinelRef = useRef<HTMLDivElement | null>(null)
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
   const reqIdRef = useRef(0)
+
+  // Allow other components (e.g. the mobile bottom-nav Search button) to
+  // programmatically focus the search input via a custom event.
+  useEffect(() => {
+    const handler = () => {
+      const el = searchInputRef.current
+      if (el) {
+        el.focus()
+        el.scrollIntoView({ behavior: "smooth", block: "center" })
+      }
+    }
+    window.addEventListener("campuskart:focus-search", handler)
+    return () => window.removeEventListener("campuskart:focus-search", handler)
+  }, [])
 
   // Debounce search input
   useEffect(() => {
@@ -188,6 +203,7 @@ export function MarketplaceView() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              ref={searchInputRef}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by title or description..."

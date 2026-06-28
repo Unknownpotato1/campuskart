@@ -64,3 +64,48 @@ export async function uploadImageToCloudinary(params: {
     stream.end(buffer)
   })
 }
+
+/**
+ * Upload any file (image OR raw file like PDF/doc) to Cloudinary.
+ * Returns the secure URL. Images use resource_type "image", everything else
+ * uses resource_type "raw" (Cloudinary stores the file as-is without
+ * transformation).
+ */
+export async function uploadFileToCloudinary(params: {
+  buffer: Buffer
+  userId: string
+  filename: string
+  contentType: string
+}): Promise<string> {
+  ensureConfigured()
+  const { buffer, userId, filename, contentType } = params
+  const isImage = contentType.startsWith("image/")
+  const folder = `campuskart/${userId}/${isImage ? "images" : "files"}`
+  const safeName = filename.replace(/[^a-zA-Z0-9-_\.]/g, "_").slice(0, 80)
+  const publicId = `${folder}/${Date.now()}-${safeName || "file"}`
+
+  return new Promise<string>((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        resource_type: isImage ? "image" : "raw",
+        public_id: publicId,
+        folder,
+        overwrite: false,
+        unique_filename: true,
+        filename_override: isImage ? undefined : filename,
+      },
+      (err, result) => {
+        if (err) {
+          reject(err)
+          return
+        }
+        if (!result?.secure_url) {
+          reject(new Error("Cloudinary upload returned no URL"))
+          return
+        }
+        resolve(result.secure_url)
+      }
+    )
+    stream.end(buffer)
+  })
+}

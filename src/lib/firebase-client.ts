@@ -49,7 +49,10 @@ export interface ClientMessage {
   conversationId: string
   senderId: string
   senderName: string
+  senderPhoto?: string | null
   content: string
+  type?: "text" | "image" | "file"
+  attachment?: { url: string; type: "image" | "file"; name: string; size: number; contentType: string } | null
   read: boolean
   createdAt: string
 }
@@ -103,12 +106,28 @@ export function subscribeToMessages(
         } else {
           createdAt = new Date().toISOString()
         }
+        const attachment = data.attachment as
+          | { url?: string; type?: string; name?: string; size?: number; contentType?: string }
+          | null
+          | undefined
+        const mappedAttachment = attachment
+          ? {
+              url: String(attachment.url),
+              type: (attachment.type as "image" | "file") || "file",
+              name: String(attachment.name),
+              size: Number(attachment.size) || 0,
+              contentType: String(attachment.contentType),
+            }
+          : null
         return {
           id: d.id,
           conversationId: convId,
           senderId: String(data.senderId ?? ""),
           senderName: String(data.senderName ?? ""),
+          senderPhoto: (data.senderPhoto as string) ?? null,
           content: String(data.content ?? ""),
+          type: (data.type as "text" | "image" | "file") || "text",
+          attachment: mappedAttachment,
           read: Boolean(data.read),
           createdAt,
         }

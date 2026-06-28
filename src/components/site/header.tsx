@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import {
   GraduationCap,
+  Home,
   Store,
   PenLine,
   MessageCircle,
@@ -52,6 +53,7 @@ export function Header({ onSignIn }: { onSignIn: () => void }) {
   }, [user, view])
 
   const tabs: { key: View; label: string; icon: typeof Store }[] = [
+    { key: "home", label: "Home", icon: Home },
     { key: "marketplace", label: "Marketplace", icon: Store },
     { key: "writing", label: "Writing Hub", icon: PenLine },
     { key: "chat", label: "My Chats", icon: MessageCircle },
@@ -62,24 +64,27 @@ export function Header({ onSignIn }: { onSignIn: () => void }) {
     : "U"
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-border bg-background/80 backdrop-blur-md">
+    <header className="sticky top-0 z-40 w-full border-b border-border bg-background shadow-sm">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-2 px-4">
         <button
-          onClick={() => navigate("marketplace")}
+          onClick={() => navigate("home")}
           className="flex items-center gap-2 shrink-0"
           aria-label="CampusKart home"
         >
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
             <GraduationCap className="h-5 w-5" />
           </div>
-          <span className="hidden text-lg font-bold tracking-tight sm:inline">
+          <span className="text-lg font-bold tracking-tight">
             Campus<span className="text-primary">Kart</span>
           </span>
         </button>
 
-        <nav className="flex items-center gap-1">
+        <nav className="hidden items-center gap-1 md:flex">
           {tabs.map((tab) => {
-            const isActive = view === tab.key || (tab.key === "marketplace" && view === "product")
+            const isActive =
+              view === tab.key ||
+              (tab.key === "marketplace" && view === "product") ||
+              (tab.key === "marketplace" && view === "new-listing")
             const Icon = tab.icon
             return (
               <button

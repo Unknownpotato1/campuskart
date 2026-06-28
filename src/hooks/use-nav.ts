@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useCallback, useMemo } from "react"
 
 export type View =
+  | "home"
   | "marketplace"
   | "product"
   | "writing"
@@ -25,7 +26,7 @@ export function useNav() {
   const sp = useSearchParams()
 
   const state: NavState = useMemo(() => {
-    const view = (sp.get("view") as View) || "marketplace"
+    const view = (sp.get("view") as View) || "home"
     const id = sp.get("id")
     const conv = sp.get("conv")
     const extra: Record<string, string> = {}

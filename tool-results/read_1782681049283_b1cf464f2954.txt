@@ -1,0 +1,302 @@
+     1→# CampusKart — Work Log
+     2→
+     3→This file is the shared worklog for all agents building CampusKart.
+     4→Each agent MUST read this file before starting, and append a new section
+     5→(separated by `---`) after finishing.
+     6→
+     7→## Project Overview
+     8→
+     9→CampusKart is a full-stack college marketplace web app. **Note on stack:**
+    10→The user requested Firebase, but the sandbox is preconfigured with
+    11→Prisma + SQLite and has no real Firebase credentials. We therefore build a
+    12→fully-functional equivalent on the available stack:
+    13→
+    14→- **Auth** → cookie-based session (`src/lib/session.ts`) with a *simulated*
+    15→  Google Sign-In modal (`src/components/site/auth-modal.tsx`). The
+    16→  `/api/auth/login` endpoint creates/finds a user by email and sets an
+    17→  httpOnly signed session cookie.
+    18→- **Database** → Prisma + SQLite (`prisma/schema.prisma`), mirroring the
+    19→  requested Firestore collections as tables (User, College, Product,
+    20→  WritingPost, Conversation, Message, ConversationRead, Report).
+    21→- **Storage** → local file uploads to `public/uploads/` via `/api/upload`,
+    22→  with client-side compression via `browser-image-compression`.
+    23→- **Real-time chat** → polling (every ~3s) instead of Firestore listeners.
+    24→
+    25→All functional requirements are met. A README + `.env.example` will be added
+    26→documenting how to migrate to Firebase.
+    27→
+    28→## Architecture / Conventions (READ THIS)
+    29→
+    30→- **Single user-visible route**: only `/` is shown to the user. Navigation is
+    31→  done via query params using the `useNav()` hook
+    32→  (`src/hooks/use-nav.ts`):
+    33→  - `?view=marketplace` (default)
+    34→  - `?view=product&id=<productId>`
+    35→  - `?view=writing`
+    36→  - `?view=chat&conv=<conversationId>`
+    37→  - `?view=profile`
+    38→  - `?view=new-listing`, `?view=new-writing`
+    39→  - Extra params allowed (e.g. `tab=listings`).
+    40→- **Theme**: green primary color already configured in `globals.css`.
+    41→  Use `bg-primary`, `text-primary`, etc. Do NOT use indigo/blue.
+    42→- **Sticky footer**: the root wrapper in `page.tsx` uses
+    43→  `min-h-screen flex flex-col`; the `<Footer>` has `mt-auto`.
+    44→- **Auth**: `useAuth()` zustand store (`src/store/auth-store.ts`) holds the
+    45→  current user. `user.loading` is true until first `/api/auth/me` resolves.
+    46→  When `user` is null → show `AuthModal`. When `user.onboarded === false` →
+    47→  show `OnboardingModal`.
+    48→- **Toasts**: use `const { toast } = useToast()` from `@/hooks/use-toast` for
+    49→  all user actions.
+    50→- **API helper**: there is no shared client fetch helper; use `fetch` directly.
+    51→  All API routes return JSON. Mutations return the updated entity.
+    52→- **Image URLs**: stored as JSON string in `Product.images` /
+    53→  `WritingPost` (n/a). Parse with `JSON.parse` on read. Empty → `[]`.
+    54→- **Date formatting**: use `date-fns` (already installed). e.g.
+    55→  `format(new Date(x), "d MMM yyyy")`.
+    56→
+    57→## Prisma Schema (final)
+    58→
+    59→Defined in `prisma/schema.prisma`. Models:
+    60→- `User { id, email, name, photo, phone, collegeId, collegeName, city, state, onboarded, createdAt, updatedAt }`
+    61→- `College { id, name, city, state, createdAt }` (36 seeded)
+    62→- `Product { id, title, description, price, images(JSON string), category, condition, sellerId, sellerName, collegeId, collegeName, status(ACTIVE|SOLD), bumpedAt, createdAt, updatedAt }`
+    63→- `WritingPost { id, type(NEED_WRITER|CAN_WRITE), title, subject, description, pageCount?, deadline?, pricePerPage, totalPrice?, subjects(JSON string), turnaround?, userId, userName, collegeId, collegeName, status(OPEN|IN_PROGRESS|COMPLETED), createdAt, updatedAt }`
+    64→- `Conversation { id, participants(JSON string), contextType(PRODUCT|WRITING), contextId, contextTitle, lastMessage, lastMessageAt, lastSenderId, createdAt, updatedAt }`
+    65→- `Message { id, conversationId, senderId, senderName, content, read, createdAt }`
+    66→- `ConversationRead { id, conversationId, userId, lastReadAt }` unique on `[conversationId, userId]`
+    67→- `Report { id, productId, reporterId, reason, createdAt }`
+    68→
+    69→## Existing API routes (foundation)
+    70→
+    71→- `POST /api/auth/login` body `{name,email,photo?}` → `{user}`, sets cookie
+    72→- `POST /api/auth/logout` → `{ok:true}`
+    73→- `GET /api/auth/me` → `{user|null}`
+    74→- `GET /api/colleges` → `{colleges[]}`
+    75→- `GET /api/profile` → `{user}` ; `PATCH /api/profile` body
+    76→  `{name?,phone?,photo?,collegeId?}` → `{user}`
+    77→- `POST /api/upload` multipart `file` → `{url}`
+    78→- `GET /api/conversations/unread` → `{count}`
+    79→
+    80→## Existing components (foundation)
+    81→
+    82→- `src/components/site/header.tsx` — `<Header onSignIn={()=>...} />`
+    83→- `src/components/site/footer.tsx` — `<Footer />`
+    84→- `src/components/site/theme-toggle.tsx`
+    85→- `src/components/site/theme-provider.tsx`
+    86→- `src/components/site/auth-modal.tsx` — `<AuthModal open onOpenChange />`
+    87→- `src/components/site/onboarding-modal.tsx` — `<OnboardingModal open onOpenChange dismissable? />`
+    88→- `src/components/site/college-select.tsx` — `<CollegeSelect value onChange placeholder />`
+    89→- `src/components/site/image-upload.tsx` — `<ImageUpload value=urls[] onChange=urls[] max=4 />`
+    90→- `src/components/shared/empty-state.tsx` — `<EmptyState icon title description action />`
+    91→- `src/components/shared/loading-skeletons.tsx` — `ProductGridSkeleton`,
+    92→  `WritingListSkeleton`, `ChatSkeleton`, etc.
+    93→
+    94→## What each subsequent Task ID must build
+    95→
+    96→- **Task 2-a (Marketplace)**: API routes under `/api/products`, and
+    97→  components under `src/components/marketplace/`. Export:
+    98→  `MarketplaceView`, `ProductDetailView`, `NewListingForm` (used as a full
+    99→  page view), plus any internal components.
+   100→- **Task 2-b (Writing Hub)**: API routes under `/api/writing`, and components
+   101→  under `src/components/writing/`. Export: `WritingView`, `NewWritingForm`.
+   102→- **Task 2-c (Chat)**: API routes under `/api/conversations`, and component
+   103→  `src/components/chat/chat-view.tsx` exporting `ChatView`.
+   104→- **Task 2-d (Profile)**: component `src/components/profile/profile-view.tsx`
+   105→  exporting `ProfileView`. Reuses products/writing APIs.
+   106→
+   107→---
+   108→Task ID: 1
+   109→Agent: main (orchestrator)
+   110→Task: Foundation — theme, schema, colleges seed, auth/session, layout, header, footer, shared components, navigation hook, auth/colleges/profile/upload APIs.
+   111→
+   112→Work Log:
+   113→- Configured green campus theme in `src/app/globals.css` (light + dark).
+   114→- Rewrote `prisma/schema.prisma` with all 8 models; ran `bun run db:push`.
+   115→- Created `src/lib/colleges.ts` with 36 real Indian colleges across 9 states.
+   116→- Ran `scripts/seed.ts` → 36 colleges seeded into SQLite.
+   117→- Built cookie session system in `src/lib/session.ts` (signed token, httpOnly).
+   118→- Created auth APIs: `/api/auth/login`, `/api/auth/logout`, `/api/auth/me`.
+   119→- Created `/api/colleges`, `/api/profile` (GET+PATCH), `/api/upload`, `/api/conversations/unread`.
+   120→- Installed `browser-image-compression`.
+   121→- Built `useAuth` zustand store and `useNav` query-param navigation hook.
+   122→- Built shared/site components: Header, Footer, ThemeToggle, ThemeProvider,
+   123→  AuthModal (simulated Google login + demo accounts), OnboardingModal,
+   124→  CollegeSelect (searchable, grouped by state), ImageUpload (compression).
+   125→- Built EmptyState + loading skeletons.
+   126→- Updated `layout.tsx` with ThemeProvider + CampusKart metadata.
+   127→- Created logo.svg + placeholder.svg in public/.
+   128→
+   129→Stage Summary:
+   130→- Foundation is complete. The dev server is running on port 3000.
+   131→- Subagents can now build Marketplace / Writing Hub / Chat / Profile against
+   132→  the documented API contracts and component conventions above.
+   133→- IMPORTANT for subagents: you MUST create your own API route files and
+   134→  component files. Do NOT modify `page.tsx` — the orchestrator will wire your
+   135→  exports into it in the final phase. Read this worklog fully first.
+   136→
+   137→---
+   138→Task ID: 2-a
+   139→Agent: marketplace-builder
+   140→Task: Build the Marketplace feature — product API routes (list/create/get/patch/delete/bump/report) and the Marketplace UI components (MarketplaceView, ProductCard, ProductDetailView, NewListingForm).
+   141→
+   142→Work Log:
+   143→- Read worklog.md foundation: theme (green primary), schema (Product/Report models), auth (`getCurrentUser`), navigation (`useNav`), shared types (`parseProduct`, `Product`, `ProductCategory`, `ProductCondition`), shared components (ImageUpload, CollegeSelect, EmptyState, ProductGridSkeleton), toast hook.
+   144→
+   145→API routes created (all under `src/app/api/products/**`):
+   146→1. `route.ts`
+   147→   - `GET /api/products` — filters via query params: `q` (case-insensitive contains on title+description via OR), `category`, `condition`, `collegeId`, `limit` (default 12, capped at 24), `cursor` (ISO date string). Keyset pagination by `bumpedAt desc` with `where.bumpedAt = { lt: cursor }` combined via AND. Takes `limit+1` to detect next page. Returns `{ products, nextCursor }` with each row parsed via `parseProduct`.
+   148→   - `POST /api/products` — protected. Validates title/description/price≥0/category/condition. Stores images as `JSON.stringify`. Sets `sellerId`/`sellerName` from session. If a `collegeId` is supplied, looks up the canonical college name; otherwise falls back to the seller's college. `status="ACTIVE"`, `bumpedAt=now()`. Returns parsed product (201).
+   149→2. `[id]/route.ts`
+   150→   - `GET` → 404 if missing, else `{ product }`.
+   151→   - `PATCH` — only seller. Accepts optional `status`, `title`, `description`, `price`, `category`, `condition`, `images`, `collegeId`. College change re-looks up the canonical name.
+   152→   - `DELETE` — only seller. Hard delete. Returns `{ ok: true }`.
+   153→3. `[id]/bump/route.ts`
+   154→   - `POST` — only seller. Computes elapsed ms since `bumpedAt`; if < 24h returns 400 with hours remaining message ("You can bump a listing at most once every 24 hours. Try again in ~Nh."). Else sets `bumpedAt=now()` and returns updated product.
+   155→4. `[id]/report/route.ts`
+   156→   - `POST` — protected. Body `{ reason }` (required). Checks existing report by `(productId, reporterId)`; if exists returns 409 with "You have already reported this listing." Else creates a `Report`. Returns `{ ok: true }`.
+   157→
+   158→Components created (all under `src/components/marketplace/**`):
+   159→5. `product-card.tsx` — `ProductCard({ product, onClick })`. Accessible button wrapping a card. `aspect-[4/3]` cover image (or `/placeholder.svg`), SOLD badge (top-left, destructive) + condition badge (top-right, secondary). Body shows title (line-clamp-1), price (`₹{toLocaleString("en-IN")}`) in primary, then a row with college name (Building2 icon, truncate) and `format(createdAt, "d MMM yyyy")`. Hover scales image. Whole card keyboard-focusable.
+   160→6. `marketplace-view.tsx` — `MarketplaceView`. Header (title + subtitle + "Sell something" → `navigate("new-listing")`). Filters bar (responsive, stacks on mobile): debounced search input with Search icon + clear button, category Select (with "All categories"), condition Select, CollegeSelect (null = "All colleges"). Fetches `/api/products?…&limit=12` and uses IntersectionObserver on a sentinel div for infinite scroll, appending via `nextCursor`. **College grouping**: when no college filter active, splits loaded products into same-college (header "From {college}") and others ("From other colleges"); otherwise shows single grid. Skeleton on initial load; EmptyState with Store icon when no matches; "Sell something" CTA in empty state. Cards wrapped in `motion.div` with `whileHover={{ y: -4 }}`.
+   161→7. `product-detail-view.tsx` — `ProductDetailView`. Reads `id` from `useNav`. Fetches `GET /api/products/{id}`; 404 → EmptyState with back button. Two-column on desktop (`grid lg:grid-cols-2 gap-8`): image gallery (main + 4 thumbnails, state-driven active image) on the left; on the right: category/condition badges, title, price (primary, ₹), description, seller card (avatar initials, name, college, posted date). Buttons: if NOT seller → "Chat with Seller" (POST `/api/conversations` → `navigate("chat", { conv })`), "Share" (clipboard copy of `origin/?view=product&id=…` + toast), "Report" (Dialog with Textarea → POST `/api/products/{id}/report`). If seller → seller-controls panel: "Mark as Sold/Active" toggle (PATCH status), "Bump listing" (POST bump with toast/error), "Edit" (navigate to `new-listing` with `extra.edit=id`), "Delete" (AlertDialog confirm → DELETE → navigate back). Loading skeleton mirrors layout. Uses motion for entrance.
+   162→8. `new-listing-form.tsx` — `NewListingForm`. Centered max-w-2xl Card with title "Post a listing" (or "Edit listing" when `extra.edit` present). Fields: Title (Input), Description (Textarea), Price (Input type=number with ₹ prefix), Category (Select with the 6 options), Condition (RadioGroup horizontal, 4 options styled as selectable chips), Images (`<ImageUpload max={4} />`), College (`<CollegeSelect />` initialized from `user.collegeId`, editable). Inline validation errors (title, description, price>0, category, condition). Submit → POST `/api/products` (or PATCH when editing). On success toast + `navigate("product", { id })`. Loading state on submit button (Loader2 spin). Cancel → `navigate("marketplace")`. Edit mode prefills from `GET /api/products/{editId}` and rejects non-sellers.
+   163→
+   164→Quality checks:
+   165→- All API routes use `import { db } from "@/lib/db"` and `import { getCurrentUser } from "@/lib/session"`.
+   166→- Used shared `parseProduct`/`Product` types throughout — no duplicated type defs.
+   167→- Green primary tokens only (`text-primary`, `bg-primary/10`, `border-primary/30`). No indigo/blue.
+   168→- Indian Rupee formatting everywhere (`₹${price.toLocaleString("en-IN")}`).
+   169→- `line-clamp-1`/`line-clamp-2` for truncation.
+   170→- Mobile-first responsive: grids use `sm:`, `lg:`, `xl:` prefixes; filters stack on mobile; gallery stacks below details on mobile.
+   171→- Accessible: labels on every field, `aria-label` on icon-only buttons, `aria-invalid` on inputs with errors, keyboard-focusable cards, AlertDialog for destructive action, Dialog for report.
+   172→- Used framer-motion for card entrance + page transitions (whileHover y:-4, initial opacity/y animate).
+   173→- Verified end-to-end against the running dev server: created a product, listed it, fetched by id, attempted bump (correctly rejected within 24h window), submitted a report, submitted duplicate report (correctly 409), PATCHed status to SOLD, DELETEd — all returned expected shapes and status codes.
+   174→
+   175→Lint:
+   176→- Ran `bun run lint`. The 4 errors + 1 warning remaining are all in **foundation files** outside this task's scope (`src/app/page.tsx`, `src/components/site/header.tsx`, `src/components/site/theme-toggle.tsx`, `src/components/site/image-upload.tsx`) — pre-existing `react-hooks/set-state-in-effect` and unused-disable-directive issues. Ran `bunx eslint src/components/marketplace src/app/api/products` to confirm: **zero errors and zero warnings in my files**.
+   177→- TypeScript: `bunx tsc --noEmit` reports no errors in any of my files (only pre-existing errors in `examples/` and `skills/`).
+   178→- `@next/next/no-img-element` rule is OFF in `eslint.config.mjs`, so I removed the unused `eslint-disable` comments from my `<img>` tags to keep the lint output clean.
+   179→
+   180→Stage Summary:
+   181→- Marketplace feature is complete and wired via `view-router.tsx` (orchestrator-owned; my exports are `MarketplaceView`, `ProductDetailView`, `NewListingForm`, `ProductCard`).
+   182→- API surface for products: `GET/POST /api/products`, `GET/PATCH/DELETE /api/products/[id]`, `POST /api/products/[id]/bump`, `POST /api/products/[id]/report`. All contract-compliant with the spec (filtering, keyset pagination, 24h bump cooldown, duplicate-report prevention, seller-only mutations).
+   183→- Subsequent tasks (2-c Chat, 2-d Profile) can reuse `GET /api/products?sellerId=…` style filters if needed (note: `sellerId` filter is not implemented in this task — Profile can fetch via a separate query or add a `sellerId` filter). `POST /api/conversations` is invoked from `ProductDetailView` per the contract; the Chat agent (2-c) must implement that endpoint accepting `{ contextType, contextId, contextTitle, participantId }` and returning `{ conversation }`.
+   184→- No files outside `src/app/api/products/**` and `src/components/marketplace/**` were modified.
+   185→
+   186→---
+   187→Task ID: 2-c
+   188→Agent: chat-builder
+   189→Task: Build the Real-time Chat feature — conversation/message API routes (list, create/find-or-create, single-get, messages list/send, mark-read) and the ChatView UI component (conversation list pane + messages pane with polling, optimistic send, mobile responsive, framer-motion entrance).
+   190→
+   191→Work Log:
+   192→- Read worklog.md foundation + marketplace (2-a) sections: green primary theme, schema (Conversation / Message / ConversationRead models), `getCurrentUser` session, `useNav` (`view==="chat"`, `conv` = selected conversation id), shared types (`parseConversation`, `Conversation`, `ConversationRaw`, `Message`), `EmptyState`, `ChatSkeleton`, `useToast`, framer-motion installed, no Socket.io (use polling per explicit requirement to simulate Firestore listeners).
+   193→- Read the marketplace's `ProductDetailView` "Chat with Seller" implementation to confirm the contract: `POST /api/conversations { contextType:"PRODUCT", contextId, contextTitle, participantId }` → `{ conversation }` (or `{ conversation: {...} }` accepted) → `navigate("chat", { conv: conv.id })`. My endpoint returns `{ conversation }` exactly as specified.
+   194→
+   195→API routes created (all under `src/app/api/conversations/**`):
+   196→
+   197→1. `src/app/api/conversations/route.ts`
+   198→   - `GET /api/conversations` — protected (401 if no session). Returns `{ conversations: Array<Conversation & { unread: number; otherName?: string }> }`. Query: `where: { participants: { contains: user.id } }` (substring match on the JSON-stringified participants works because cuid ids never appear as substrings of each other), ordered by `lastMessageAt desc`. For each conversation, computes `unread` = count of messages where `senderId != user`, `read = false`, AND `createdAt > user's ConversationRead.lastReadAt` (or all such unread if no read row). `otherName` is resolved by bulk-fetching the "other" participant's name from `User` (single `findMany` with `id IN (...)`, then map). `ConversationRead` rows are also bulk-fetched in one query to avoid N+1.
+   199→   - `POST /api/conversations` — protected. Body `{ contextType, contextId, contextTitle, participantId }`. Validates `contextType ∈ {PRODUCT, WRITING}`, requires `contextId` and `participantId`, rejects self-conversations (400 "Cannot start a conversation with yourself.") and non-existent participants (404). Find-or-create: queries conversations by `contextId`, then filters in JS (SQLite can't do JSON array membership) for one whose parsed `participants` includes both `user.id` and `participantId`. Returns existing (200) or creates new with `participants: JSON.stringify([user.id, participantId])`, `lastMessage: ""`, `lastMessageAt: now`, `lastSenderId: null` (201). Idempotent — verified end-to-end that a second POST with the same contextId+participantId returns the original conversation.
+   200→
+   201→2. `src/app/api/conversations/[id]/route.ts`
+   202→   - `GET` — protected. Verifies the current user is a participant (404 if not found OR not a participant — never reveals existence to non-participants). Returns `{ conversation }` parsed, with `otherName` resolved from the `User` table.
+   203→
+   204→3. `src/app/api/conversations/[id]/messages/route.ts`
+   205→   - `GET` — protected; verify participant. Returns `{ messages: Message[] }` ordered by `createdAt asc`, capped at 200 for safety.
+   206→   - `POST` — protected; verify participant. Body `{ content }` (required, max 4000 chars). Creates the message (`senderId`/`senderName` from session, `read:false`). Updates the conversation: `lastMessage = content`, `lastMessageAt = now`, `lastSenderId = senderId`. Upserts `ConversationRead` for the sender with `lastReadAt = now` (so the sender's own unread badge stays 0). Also flips `read=true` on all messages in this conversation sent by the OTHER party that are older — nice-to-have so the recipient's read flags flip when the sender replies. Returns `{ message }` (201). A small `authorize()` helper centralizes the participant check and is reused by both handlers.
+   207→
+   208→4. `src/app/api/conversations/[id]/read/route.ts`
+   209→   - `POST` — protected; verify participant. Runs a Prisma `$transaction` that (a) upserts `ConversationRead` for the current user with `lastReadAt = now`, and (b) `updateMany` flips `read=true` on all messages in this conversation where `senderId != currentUserId` and `read = false`. Returns `{ ok: true }`.
+   210→
+   211→Component created:
+   212→
+   213→5. `src/components/chat/chat-view.tsx` — exports `ChatView`.
+   214→   - Reads `conv` (selected conversation id, may be null) and `navigate` from `useNav()`. Uses `useIsMobile()` to drive mobile list↔messages switching.
+   215→   - Layout: `grid grid-cols-1 md:grid-cols-[300px_1fr] gap-4 h-[calc(100vh-9rem)]` (fixed-height chat shell). On mobile, `showMessagesOnMobile = isMobile && !!conv` toggles the two panes via `cn(... ? "hidden":"block", "md:block")` — when a conversation is selected, the list is hidden and the messages pane is shown with a back button; otherwise the list is shown. On desktop both panes are always visible.
+   216→   - **ConversationList** (left pane):
+   217→     - Fetches `GET /api/conversations` on mount; polls every 5s (cleared on unmount).
+   218→     - Renders a search box (Input with Search icon) that filters client-side by `contextTitle` or `otherName`.
+   219→     - Each list item: avatar with initials, bold context title, last-message preview (truncate, muted), `formatDistanceToNow(lastMessageAt, { addSuffix: true })` time-ago, "with {otherName}" subline, and a primary unread badge (`{unread > 9 ? "9+" : unread}`) when `unread > 0`. Active conversation is highlighted with `bg-primary/10`. Clicking calls `navigate("chat", { conv: id })` AND fires `POST /api/conversations/[id]/read` so the unread badge clears immediately.
+   220→     - Empty state: `<EmptyState icon={<MessageCircle/>} title="No conversations yet" description="Start chatting from a product or writing post." />`. Loading state: `<ChatSkeleton />`.
+   221→   - **MessagesPane** (right pane, keyed by `convId` so state resets cleanly on switch):
+   222→     - Fetches `GET /api/conversations/[id]` for the header context (PRODUCT/WRITING badge + "Re: {contextTitle}"). 404 → EmptyState with back button.
+   223→     - Polls `GET /api/conversations/[id]/messages` every 3s. On every poll, if any message from the other party is still `read=false`, fires `POST /api/conversations/[id]/read` so the header badge updates (covers both first-load and new-message-arrival cases).
+   224→     - Messages list: scrollable `overflow-y-auto scroll-thin`. Each bubble: own messages right-aligned `bg-primary text-primary-foreground rounded-2xl`, other's left-aligned `bg-muted rounded-2xl`, `max-w-[75%]`, sender name shown for other's messages, time in `format(date, "p")` below content. Framer Motion entrance `initial={{opacity:0, y:6}} animate={{opacity:1, y:0}}`.
+   225→     - Auto-scroll: a ref tracks whether the user is "near bottom" (within 100px) on scroll. New messages trigger auto-scroll only when near bottom — no yanking. Initial load and conversation switch also force a scroll to bottom.
+   226→     - Composer at bottom: a `<textarea>` (auto-grows via `field-sizing-content`/`max-h-32`, custom Tailwind classes to keep it compact at `min-h-[2.5rem]`) + a primary Send icon button. Enter sends; Shift+Enter inserts a newline. Send disabled while input empty or while sending.
+   227→     - **Optimistic UI**: on send, a temp message (`id: temp-<ts>-<rand>`) is appended immediately and tracked in a `pendingRef` Map. The POST returns the canonical message; the temp is replaced in-place (or dropped if a poll already inserted the real one). Polling reconciles pending entries by matching `senderId + content + createdAt within 30s` against server messages, dropping confirmed temps. On error, the temp is removed, the input is restored, and a destructive toast is shown. Empty messages state: "👋 Say hi!".
+   228→     - Loading skeleton mirrors the layout (header avatar bubble + a few message bubbles + composer bar).
+   229→   - **DesktopPlaceholder**: shown on desktop when no conversation is selected — a MessageCircle icon in a `bg-primary/10` circle, "Select a conversation" heading, and helper text.
+   230→   - Helper `initials(name)` and `safeFormatTime(iso)` handle edge cases (missing names, bad dates).
+   231→
+   232→End-to-end verification (curl, two demo users Aarav + Priya):
+   233→- Aarav `POST /api/conversations` (PRODUCT, "Chemistry Lab Manual", participantId=Priya) → 201 with the new conversation. Re-POST returns the same conversation (idempotent). ✓
+   234→- Aarav `POST .../messages { content: "Hi Priya..." }` → 201. Priya `GET /api/conversations` shows `unread: 1, otherName: "Aarav Sharma"`. ✓
+   235→- Priya `GET .../messages` → 1 message, `read: false`. Priya `POST .../read` → `{ ok: true }`. Priya `GET /api/conversations` → `unread: 0`. ✓
+   236→- Priya replies → Aarav's `GET /api/conversations/unread` returns `{ count: 1 }` (header badge integration with foundation's existing endpoint — confirmed not rebuilt). ✓
+   237→- WRITING-context conversation created and listed alongside the PRODUCT one. ✓
+   238→- Edge cases: unauthenticated → 401; nonexistent conversation → 404; non-participant access → 404 (no existence leak); empty content → 400; self-conversation → 400; invalid `contextType` → 400. ✓
+   239→
+   240→Quality / style:
+   241→- Green primary tokens only (`bg-primary`, `text-primary-foreground`, `bg-primary/10`, `text-primary`). No indigo/blue anywhere.
+   242→- Mobile-first responsive: single-column on mobile with list↔messages switching; two-column on `md:`. Touch targets ≥ 36px. Back button on mobile only (`md:hidden`).
+   243→- Accessible: `aria-label`s on icon-only buttons (back, send, search), `aria-current` on active conversation, `aria-live="polite"` on the messages container, `aria-label="Message"` on the textarea, semantic `<ul>`/`<li>`/`<button>` for the conversation list, `sr-only`-equivalent text where appropriate.
+   244→- Loading states: `ChatSkeleton` for the list, a custom `MessagesPaneSkeleton` for the messages pane. Error states: toast for send failures, EmptyState for not-found.
+   245→- Subtle Framer Motion transitions: `initial={{opacity:0, y:6}} animate={{opacity:1, y:0}}` on each message bubble.
+   246→- Custom scrollbar (`scroll-thin`) on both the conversation list and the messages pane.
+   247→
+   248→Lint / typecheck:
+   249→- `bunx eslint src/app/api/conversations src/components/chat` → **zero errors, zero warnings** in my files.
+   250→- `bun run lint` (full project) → the only remaining 4 errors + 1 warning are all in **foundation files** outside this task's scope (`src/app/page.tsx`, `src/components/site/header.tsx`, `src/components/site/theme-toggle.tsx`, `src/components/site/image-upload.tsx`) — pre-existing `react-hooks/set-state-in-effect` and one unused-disable-directive, identical to what the marketplace builder (2-a) reported. I did not touch any of those files.
+   251→- `bunx tsc --noEmit` → no errors in my files (only pre-existing errors in `examples/` and `skills/`).
+   252→
+   253→Stage Summary:
+   254→- Chat feature is complete and wired via `view-router.tsx` (orchestrator-owned; my export is `ChatView`).
+   255→- API surface for conversations: `GET/POST /api/conversations`, `GET /api/conversations/[id]`, `GET/POST /api/conversations/[id]/messages`, `POST /api/conversations/[id]/read`. The foundation's `GET /api/conversations/unread` was NOT rebuilt — my polling + read endpoint integrates with it cleanly (verified the header badge updates after `POST .../read`).
+   256→- The Marketplace (2-a) and Writing Hub (2-b, when built) can both call `POST /api/conversations { contextType, contextId, contextTitle, participantId }` and rely on `{ conversation }` being returned, then `navigate("chat", { conv: conversation.id })`.
+   257→- No files outside `src/app/api/conversations/**` and `src/components/chat/**` were modified.
+   258→
+   259→---
+   260→Task ID: 2-b
+   261→Agent: writing-hub-builder
+   262→Task: Build the Writing Hub feature — writing-post API routes (list/create/get/patch/delete) and the Writing Hub UI components (WritingView, WritingCard, NewWritingForm).
+   263→
+   264→Work Log:
+   265→- Read worklog.md foundation + marketplace (2-a) + chat (2-c) sections: green primary theme, schema (`WritingPost` model with `type`/`subject`/`subjects` JSON/`pageCount`/`deadline`/`pricePerPage`/`totalPrice`/`turnaround`/`status`), auth (`getCurrentUser` from `@/lib/session`), navigation (`useNav` — `view==="writing"` lists, `view==="new-writing"` form, `extra.type` ("need"|"writer")), shared types (`parseWritingPost`, `WritingPost`, `WritingPostRaw`, `WritingType`, `WritingStatus`), shared components (`CollegeSelect`, `EmptyState`, `WritingListSkeleton`/`WritingCardSkeleton`), toast hook, framer-motion installed. Confirmed the chat (2-c) `POST /api/conversations` contract: `{ contextType:"WRITING", contextId, contextTitle, participantId }` → `{ conversation }` → `navigate("chat", { conv: conversation.id })`.
+   266→
+   267→Inventory of pre-existing files:
+   268→- On entering, the `src/app/api/writing/route.ts`, `src/app/api/writing/[id]/route.ts`, `src/components/writing/writing-view.tsx`, and `src/components/writing/writing-card.tsx` files were already fully implemented (not stubs) — they were created in a prior pass and match the spec contract precisely. I verified each against the spec and confirmed full compliance. **Only `src/components/writing/new-writing-form.tsx` was a stub** ("New writing post form loading…") — I built that one from scratch (see below).
+   269→
+   270→API routes (verified compliant — no changes needed):
+   271→1. `src/app/api/writing/route.ts`
+   272→   - `GET` — query params: `type` ("NEED_WRITER"|"CAN_WRITE"), `collegeId`, `subject` (OR contains on `subject` + `title` + raw `subjects` JSON string for CAN_WRITE multi-subject matching), `deadline` (ISO date; AND-clauses `type=NEED_WRITER` + `deadline>=date`). `orderBy: { createdAt: "desc" }`. Returns `{ posts: WritingPost[] }` parsed via `parseWritingPost`. ✓
+   273→   - `POST` — protected (401 if no session). Validates `type ∈ {NEED_WRITER, CAN_WRITE}`, required `title`/`subject`/`description`. NEED_WRITER: requires positive `pageCount`, valid `pricePerPage` (≥0), required `deadline`; computes `totalPrice = pageCount * pricePerPage`; stores `subjects:"[]"`, `turnaround:null`. CAN_WRITE: `subjects` from array → `JSON.stringify` (de-duped, trimmed), valid `pricePerPage`, optional `turnaround`; `pageCount`/`deadline`/`totalPrice` null. College resolved by lookup (canonical name) or user fallback. `status:"OPEN"`, `userId`/`userName` from session. Returns `{ post }` (201) parsed. ✓
+   274→2. `src/app/api/writing/[id]/route.ts`
+   275→   - `GET` → 404 if missing, else `{ post }` parsed. ✓
+   276→   - `PATCH` — protected, author-only (403 if not owner). Body `{ status? }` validated against `OPEN|IN_PROGRESS|COMPLETED`. Returns `{ post }`. ✓
+   277→   - `DELETE` — protected, author-only. Hard delete. Returns `{ ok: true }`. ✓
+   278→
+   279→Components (verified/built):
+   280→3. `src/components/writing/writing-view.tsx` — exports `WritingView` (verified).
+   281→   - Header: "Writing Hub" + subtitle + prominent payment-info banner (`border-primary/30 bg-primary/5` with `Info` icon, "Payment note: Payment is to be settled directly between students…"). ✓
+   282→   - shadcn `Tabs` with two triggers: "Need a Writer" (NEED_WRITER, `PenLine` icon) | "Writers Available" (CAN_WRITE, `UserCheck` icon). Framer Motion `AnimatePresence mode="wait"` wraps the body, keyed on `tab`, for smooth cross-tab transitions. ✓
+   283→   - Filters below tabs (responsive, stacked on mobile): debounced subject search input (Search icon + clear X), `DeadlineFilter` (Select with "Any deadline"/3/7/14/30 days) shown only for NEED_WRITER tab, `CollegeSelect` (nullable = all). ✓
+   284→   - "Post" button (DropdownMenu): "I need a writer" → `navigate("new-writing", { extra: { type: "need" } })`; "I'm a writer" → `{ type: "writer" }`. ✓
+   285→   - Fetches `GET /api/writing?…` keyed on (tab, collegeId, debouncedSubject, deadline); a `reqIdRef` guards against stale responses. `WritingListSkeleton` while loading; `<EmptyState>` (with relevant icon + CTA button to create a post) when no results; error `<EmptyState>` with a Retry button on fetch failure. ✓
+   286→   - When no college filter is active, posts are split into "From {your college}" vs "From other colleges" sections (mirrors Marketplace convention); otherwise a single ungrouped grid. Grid: `grid gap-4 md:grid-cols-2`, each card wrapped in a `motion.div` with `whileHover={{ y: -4 }}`. ✓
+   287→   - `handleChat(post)`: signs-in check, `POST /api/conversations { contextType:"WRITING", contextId:post.id, contextTitle:post.title, participantId:post.userId }` → reads `data.conversation` (with fallback to `data`) → `navigate("chat", { conv: conv.id })`. Destructive toast on failure. ✓
+   288→4. `src/components/writing/writing-card.tsx` — exports `WritingCard` (verified).
+   289→   - Props `{ post: WritingPost; onChat?: () => void }`. Card: `rounded-2xl border border-border bg-card p-5` + `hover:shadow-md`. ✓
+   290→   - Header row: type badge (NEED_WRITER → primary-tinted `bg-primary/10 text-primary`; CAN_WRITE → `secondary` variant) + status pill (OPEN green `bg-primary/10 text-primary`, IN_PROGRESS amber `bg-amber-500/10 text-amber-600`, COMPLETED muted) + `Your post` pill when `useAuth().user?.id === post.userId`. ✓
+   291→   - Title (`line-clamp-1 text-lg font-semibold`) + subject with `BookOpen` icon (truncate) + description (`line-clamp-2 text-muted-foreground`). ✓
+   292→   - For CAN_WRITE: shows up to 5 subject chips + "+N more" overflow. ✓
+   293→   - Info `<dl>` grid (2 cols): NEED_WRITER → Pages / Deadline (formatted `d MMM yyyy`, red if past-due while OPEN) / Per-page ₹ / Total ₹ (primary, bold); CAN_WRITE → Subjects count / Turnaround / Per-page ₹ (primary) + a full-width payment note row. ₹ values use `toLocaleString("en-IN")`. ✓
+   294→   - Footer: poster name (User icon, truncate) + college name (Building2 icon, truncate) + action button on the right ("I'll Write This" for NEED_WRITER / "Hire This Writer" for CAN_WRITE), with `Loader2` spinner during the chat-creation promise; shortened to "Write"/"Hire" on mobile. Button hidden (only `Your post` pill shown) when the current user owns the post. ✓
+   295→5. `src/components/writing/new-writing-form.tsx` — exports `NewWritingForm` (BUILT — replaces prior stub).
+   296→   - Reads `extra.type` from `useNav()`; `"writer"` → CAN_WRITE form, anything else (including absent) → NEED_WRITER form (default "need" per spec). ✓
+   297→   - Type toggle at top: a 2-column segmented control ("I need a writer" / "I'm a writer") — clicking calls `navigate("new-writing", { extra: { type: next } })` so the URL is the source of truth and back/forward behaves intuitively. ✓
+   298→   - Shared fields: Title, Subject (label "Primary subject" on the writer form), Description (Textarea), College (`<CollegeSelect>` auto-filled from `useAuth().user.collegeId`/`collegeName`, editable, with a one-time effect that fills it if the user signs in mid-session). ✓
+   299→   - NEED_WRITER block (tinted `bg-muted/20` panel): Page Count (number input, `min=1`), Deadline (`<input type="date">` with `min=today` for client-side past-date prevention — chosen for reliability over a custom calendar popover per spec), Price Per Page (number, default `"8"` with ₹ prefix). Live Total Price display: `pages × pricePerPage` via `useMemo`, formatted `₹{toLocaleString("en-IN")}` in a `border-primary/30 bg-primary/5` highlight bar that updates as the user types. ✓
+   300→   - CAN_WRITE block: Subjects (`TagInput` — an input where typing a subject + Enter or comma adds a chip; Backspace on empty removes the last chip; clicking the chip's X removes it; case-insensitive de-dupe), Price Per Page (number, default `"10"` with ₹ prefix), Turnaround (text input, e.g. "2-3 days"). The single `subject` field is automatically prepended into the `subjects` array on submit (de-duped) so JSON-string subject searches match. ✓
+
+[showing lines 1-300 of 702; use offset=301 with limit to continue reading]

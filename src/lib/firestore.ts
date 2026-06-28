@@ -462,7 +462,10 @@ interface MessageDoc {
   conversationId: string
   senderId: string
   senderName: string
+  senderPhoto?: string | null
   content: string
+  type?: string // "text" | "image" | "file"
+  attachment?: { url: string; type: string; name: string; size: number; contentType: string } | null
   read: boolean
   createdAt: string
 }
@@ -482,24 +485,26 @@ function toConversation(id: string, d: ConversationDoc): Conversation {
   }
 }
 
-export async function listConversations(userId: string): Promise<Array<Conversation & { unread: number; otherName: string | null }>> {
+export async function listConversations(userId: string): Promise<Array<Conversation & { unread: number; otherName: string | null; otherPhoto: string | null }>> {
   // array-contains + orderBy would need a composite index; fetch without
   // orderBy and sort in memory.
   const snap = await adminDb
     .collection("conversations")
     .where("participants", "array-contains", userId)
     .get()
-  const result: Array<Conversation & { unread: number; otherName: string | null }> = []
+  const result: Array<Conversation & { unread: number; otherName: string | null; otherPhoto: string | null }> = []
   for (const d of snap.docs) {
     const conv = toConversation(d.id, d.data() as ConversationDoc)
     const unread = await getConversationUnread(d.id, userId)
     const otherId = conv.participants.find((p) => p !== userId)
     let otherName: string | null = null
+    let otherPhoto: string | null = null
     if (otherId) {
       const otherUser = await getUser(otherId)
       otherName = otherUser?.name ?? null
+      otherPhoto = otherUser?.photo ?? null
     }
-    result.push({ ...conv, unread, otherName })
+    result.push({ ...conv, unread, otherName, otherPhoto })
   }
   // Sort by lastMessageAt desc in memory.
   result.sort((a, b) =>
@@ -528,18 +533,20 @@ async function getConversationUnread(convId: string, userId: string): Promise<nu
 export async function getConversation(
   id: string,
   userId: string
-): Promise<(Conversation & { otherName: string | null }) | null> {
+): Promise<(Conversation & { otherName: string | null; otherPhoto: string | null }) | null> {
   const snap = await adminDb.collection("conversations").doc(id).get()
   if (!snap.exists) return null
   const conv = toConversation(snap.id, snap.data() as ConversationDoc)
   if (!conv.participants.includes(userId)) return null
   const otherId = conv.participants.find((p) => p !== userId)
   let otherName: string | null = null
+  let otherPhoto: string | null = null
   if (otherId) {
     const otherUser = await getUser(otherId)
     otherName = otherUser?.name ?? null
+    otherPhoto = otherUser?.photo ?? null
   }
-  return { ...conv, otherName }
+  return { ...conv, otherName, otherPhoto }
 }
 
 export async function findOrCreateConversation(params: {
@@ -593,12 +600,25 @@ export async function getMessages(convId: string, userId: string): Promise<Messa
     .get()
   return snap.docs.map((d) => {
     const data = d.data() as MessageDoc
+    const rawAttachment = data.attachment
+    const attachment = rawAttachment
+      ? {
+          url: String(rawAttachment.url),
+          type: (rawAttachment.type as "image" | "file") || "file",
+          name: String(rawAttachment.name),
+          size: Number(rawAttachment.size) || 0,
+          contentType: String(rawAttachment.contentType),
+        }
+      : null
     return {
       id: d.id,
       conversationId: convId,
       senderId: data.senderId,
       senderName: data.senderName,
-      content: data.content,
+      senderPhoto: data.senderPhoto ?? null,
+      content: data.content || "",
+      type: (data.type as "text" | "image" | "file") || "text",
+      attachment,
       read: data.read,
       createdAt: data.createdAt,
     }
@@ -609,10 +629,14 @@ export async function sendMessage(params: {
   convId: string
   senderId: string
   senderName: string
+  senderPhoto?: string | null
   content: string
+  type?: "text" | "image" | "file"
+  attachment?: { url: string; type: "image" | "file"; name: string; size: number; contentType: string } | null
 }): Promise<Message> {
-  const { convId, senderId, senderName, content } = params
+  const { convId, senderId, senderName, senderPhoto, content, type, attachment } = params
   const ts = nowIso()
+  const msgType = type || (attachment?.type === "image" ? "image" : attachment?.type === "file" ? "file" : "text")
   const msgRef = await adminDb
     .collection("conversations")
     .doc(convId)
@@ -621,13 +645,22 @@ export async function sendMessage(params: {
       conversationId: convId,
       senderId,
       senderName,
+      senderPhoto: senderPhoto ?? null,
       content,
+      type: msgType,
+      attachment: attachment ?? null,
       read: false,
       createdAt: ts,
     } as MessageDoc)
-  // Update conversation snapshot
+  // Update conversation snapshot with a short preview.
+  const preview =
+    msgType === "image"
+      ? "\ud83d\udcf7 Photo"
+      : msgType === "file"
+        ? `\ud83d\udcce ${attachment?.name || "File"}`
+        : content
   await adminDb.collection("conversations").doc(convId).update({
-    lastMessage: content,
+    lastMessage: preview,
     lastMessageAt: ts,
     lastSenderId: senderId,
     updatedAt: ts,
@@ -639,7 +672,10 @@ export async function sendMessage(params: {
     conversationId: convId,
     senderId,
     senderName,
+    senderPhoto: senderPhoto ?? null,
     content,
+    type: msgType,
+    attachment: attachment ?? null,
     read: false,
     createdAt: ts,
   }

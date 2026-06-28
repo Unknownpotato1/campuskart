@@ -1,0 +1,913 @@
+     1→"use client"
+     2→
+     3→import { useCallback, useEffect, useState } from "react"
+     4→import { AnimatePresence, motion } from "framer-motion"
+     5→import { format } from "date-fns"
+     6→import {
+     7→  BookOpen,
+     8→  Building2,
+     9→  CheckCircle2,
+    10→  Info,
+    11→  Loader2,
+    12→  Mail,
+    13→  MapPin,
+    14→  Package,
+    15→  PenLine,
+    16→  Plus,
+    17→  ShoppingCart,
+    18→  Trash2,
+    19→  TrendingUp,
+    20→  User as UserIcon,
+    21→} from "lucide-react"
+    22→
+    23→import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+    24→import { Badge } from "@/components/ui/badge"
+    25→import { Button } from "@/components/ui/button"
+    26→import {
+    27→  Card,
+    28→  CardContent,
+    29→  CardDescription,
+    30→  CardHeader,
+    31→  CardTitle,
+    32→} from "@/components/ui/card"
+    33→import { Input } from "@/components/ui/input"
+    34→import { Label } from "@/components/ui/label"
+    35→import {
+    36→  Select,
+    37→  SelectContent,
+    38→  SelectItem,
+    39→  SelectTrigger,
+    40→  SelectValue,
+    41→} from "@/components/ui/select"
+    42→import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+    43→import {
+    44→  AlertDialog,
+    45→  AlertDialogAction,
+    46→  AlertDialogCancel,
+    47→  AlertDialogContent,
+    48→  AlertDialogDescription,
+    49→  AlertDialogFooter,
+    50→  AlertDialogHeader,
+    51→  AlertDialogTitle,
+    52→  AlertDialogTrigger,
+    53→} from "@/components/ui/alert-dialog"
+    54→
+    55→import { CollegeSelect } from "@/components/site/college-select"
+    56→import { EmptyState } from "@/components/shared/empty-state"
+    57→import {
+    58→  ProductGridSkeleton,
+    59→  WritingListSkeleton,
+    60→} from "@/components/shared/loading-skeletons"
+    61→
+    62→import { useNav, type View } from "@/hooks/use-nav"
+    63→import { useAuth } from "@/store/auth-store"
+    64→import { useToast } from "@/hooks/use-toast"
+    65→import { cn } from "@/lib/utils"
+    66→import type { Product, WritingPost } from "@/lib/types"
+    67→
+    68→type TabKey = "profile" | "listings" | "writing"
+    69→type Navigate = (view: View, opts?: { id?: string | null; conv?: string | null; extra?: Record<string, string> }) => void
+    70→
+    71→const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`
+    72→
+    73→function initialsOf(name: string) {
+    74→  return name
+    75→    .split(" ")
+    76→    .map((p) => p[0])
+    77→    .filter(Boolean)
+    78→    .slice(0, 2)
+    79→    .join("")
+    80→    .toUpperCase()
+    81→}
+    82→
+    83→export function ProfileView() {
+    84→  const { navigate, extra } = useNav()
+    85→  const { user } = useAuth()
+    86→
+    87→  const tab: TabKey =
+    88→    extra.tab === "listings" || extra.tab === "writing" ? extra.tab : "profile"
+    89→
+    90→  // my-content fetch (single source of truth for both Listings & Writing tabs)
+    91→  const [products, setProducts] = useState<Product[]>([])
+    92→  const [writingPosts, setWritingPosts] = useState<WritingPost[]>([])
+    93→  const [loading, setLoading] = useState(true)
+    94→  const [error, setError] = useState<string | null>(null)
+    95→  const [refreshKey, setRefreshKey] = useState(0)
+    96→
+    97→  const fetchContent = useCallback(async () => {
+    98→    setLoading(true)
+    99→    setError(null)
+   100→    try {
+   101→      const r = await fetch("/api/profile/my-content")
+   102→      if (!r.ok) {
+   103→        if (r.status === 401) {
+   104→          setError("Please sign in to view your content.")
+   105→        } else {
+   106→          throw new Error("Failed to load your content")
+   107→        }
+   108→        return
+   109→      }
+   110→      const data = await r.json()
+   111→      setProducts(data.products || [])
+   112→      setWritingPosts(data.writingPosts || [])
+   113→    } catch (e) {
+   114→      setError(e instanceof Error ? e.message : "Failed to load your content")
+   115→    } finally {
+   116→      setLoading(false)
+   117→    }
+   118→  }, [])
+   119→
+   120→  useEffect(() => {
+   121→    void fetchContent()
+   122→  }, [fetchContent, refreshKey])
+   123→
+   124→  const refresh = useCallback(() => setRefreshKey((k) => k + 1), [])
+   125→
+   126→  const handleTabChange = (next: string) => {
+   127→    navigate("profile", { extra: { tab: next } })
+   128→  }
+   129→
+   130→  if (!user) {
+   131→    return (
+   132→      <EmptyState
+   133→        icon={<UserIcon className="size-7" />}
+   134→        title="Sign in to view your profile"
+   135→        description="You need to be signed in to manage your listings and writing posts."
+   136→      />
+   137→    )
+   138→  }
+   139→
+   140→  const initials = initialsOf(user.name) || "?"
+   141→  const location = [user.city, user.state].filter(Boolean).join(", ")
+   142→
+   143→  return (
+   144→    <div className="space-y-6">
+   145→      {/* Header */}
+   146→      <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-center">
+   147→        <Avatar className="size-20 border border-border shadow-sm sm:size-24">
+   148→          {user.photo ? <AvatarImage src={user.photo} alt={user.name} /> : null}
+   149→          <AvatarFallback className="bg-primary/10 text-xl font-semibold text-primary">
+   150→            {initials}
+   151→          </AvatarFallback>
+   152→        </Avatar>
+   153→        <div className="min-w-0 flex-1">
+   154→          <h1 className="break-words text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+   155→            {user.name}
+   156→          </h1>
+   157→          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+   158→            <span className="flex min-w-0 items-center gap-1.5">
+   159→              <Mail className="size-4 shrink-0 text-primary/70" />
+   160→              <span className="break-all">{user.email}</span>
+   161→            </span>
+   162→            {user.collegeName && (
+   163→              <span className="flex min-w-0 items-center gap-1.5">
+   164→                <Building2 className="size-4 shrink-0 text-primary/70" />
+   165→                <span className="truncate">{user.collegeName}</span>
+   166→              </span>
+   167→            )}
+   168→            {location && (
+   169→              <span className="flex min-w-0 items-center gap-1.5">
+   170→                <MapPin className="size-4 shrink-0 text-primary/70" />
+   171→                <span className="truncate">{location}</span>
+   172→              </span>
+   173→            )}
+   174→          </div>
+   175→        </div>
+   176→      </div>
+   177→
+   178→      {/* Tabs */}
+   179→      <Tabs value={tab} onValueChange={handleTabChange} className="w-full">
+   180→        <TabsList className="grid w-full max-w-md grid-cols-3">
+   181→          <TabsTrigger value="profile">Profile</TabsTrigger>
+   182→          <TabsTrigger value="listings">My Listings</TabsTrigger>
+   183→          <TabsTrigger value="writing">My Writing</TabsTrigger>
+   184→        </TabsList>
+   185→
+   186→        <AnimatePresence mode="wait">
+   187→          <motion.div
+   188→            key={tab}
+   189→            initial={{ opacity: 0, y: 8 }}
+   190→            animate={{ opacity: 1, y: 0 }}
+   191→            exit={{ opacity: 0, y: -8 }}
+   192→            transition={{ duration: 0.18 }}
+   193→            className="mt-5"
+   194→          >
+   195→            {tab === "profile" && <ProfileEditForm onSaved={refresh} />}
+   196→            {tab === "listings" && (
+   197→              <ListingsTab
+   198→                products={products}
+   199→                loading={loading}
+   200→                error={error}
+   201→                onRefresh={refresh}
+   202→                onRetry={fetchContent}
+   203→                navigate={navigate}
+   204→              />
+   205→            )}
+   206→            {tab === "writing" && (
+   207→              <WritingTab
+   208→                posts={writingPosts}
+   209→                loading={loading}
+   210→                error={error}
+   211→                onRefresh={refresh}
+   212→                onRetry={fetchContent}
+   213→                navigate={navigate}
+   214→              />
+   215→            )}
+   216→          </motion.div>
+   217→        </AnimatePresence>
+   218→      </Tabs>
+   219→    </div>
+   220→  )
+   221→}
+   222→
+   223→// ----------------------------------------------------------------------------
+   224→// Profile edit form
+   225→// ----------------------------------------------------------------------------
+   226→
+   227→function ProfileEditForm({ onSaved }: { onSaved: () => void }) {
+   228→  const { user, setUser } = useAuth()
+   229→  const { toast } = useToast()
+   230→
+   231→  // Initialize once from the current user (matches onboarding-modal pattern)
+   232→  const [name, setName] = useState(user?.name || "")
+   233→  const [phone, setPhone] = useState(user?.phone || "")
+   234→  const [photo, setPhoto] = useState(user?.photo || "")
+   235→  const [collegeId, setCollegeId] = useState<string | null>(user?.collegeId || null)
+   236→  const [saving, setSaving] = useState(false)
+   237→
+   238→  if (!user) return null
+   239→
+   240→  async function handleSave() {
+   241→    if (!name.trim()) {
+   242→      toast({ title: "Name is required", variant: "destructive" })
+   243→      return
+   244→    }
+   245→    setSaving(true)
+   246→    try {
+   247→      const body: Record<string, unknown> = {
+   248→        name: name.trim(),
+   249→        phone: phone.trim(),
+   250→        photo: photo.trim(),
+   251→      }
+   252→      // Only send collegeId when it actually changed (avoid no-op resets)
+   253→      if (collegeId !== user!.collegeId) {
+   254→        body.collegeId = collegeId || ""
+   255→      }
+   256→      const r = await fetch("/api/profile", {
+   257→        method: "PATCH",
+   258→        headers: { "Content-Type": "application/json" },
+   259→        body: JSON.stringify(body),
+   260→      })
+   261→      if (!r.ok) {
+   262→        const err = await r.json().catch(() => ({}))
+   263→        throw new Error(err.error || "Failed to update profile")
+   264→      }
+   265→      const data = await r.json()
+   266→      setUser(data.user)
+   267→      toast({ title: "Profile updated", description: "Your changes have been saved." })
+   268→      onSaved()
+   269→    } catch (e) {
+   270→      toast({
+   271→        title: "Update failed",
+   272→        description: e instanceof Error ? e.message : "Please try again.",
+   273→        variant: "destructive",
+   274→      })
+   275→    } finally {
+   276→      setSaving(false)
+   277→    }
+   278→  }
+   279→
+   280→  const photoUrl = photo.trim()
+   281→
+   282→  return (
+   283→    <Card className="max-w-2xl">
+   284→      <CardHeader>
+   285→        <CardTitle>Edit profile</CardTitle>
+   286→        <CardDescription>
+   287→          Update your name, contact, photo, and college.
+   288→        </CardDescription>
+   289→      </CardHeader>
+   290→      <CardContent className="space-y-5">
+   291→        {/* Live avatar preview */}
+   292→        <div className="flex items-center gap-4">
+   293→          <Avatar className="size-16 border border-border">
+   294→            {photoUrl ? <AvatarImage src={photoUrl} alt={name || "Avatar"} /> : null}
+   295→            <AvatarFallback className="bg-primary/10 text-base font-semibold text-primary">
+   296→              {initialsOf(name) || "?"}
+   297→            </AvatarFallback>
+   298→          </Avatar>
+   299→          <p className="text-sm text-muted-foreground">
+   300→            Your photo appears on listings and in chats.
+   301→          </p>
+   302→        </div>
+   303→
+   304→        <div className="space-y-2">
+   305→          <Label htmlFor="profile-name">Name</Label>
+   306→          <Input
+   307→            id="profile-name"
+   308→            value={name}
+   309→            onChange={(e) => setName(e.target.value)}
+   310→            placeholder="Your name"
+   311→            autoComplete="name"
+   312→          />
+   313→        </div>
+   314→
+   315→        <div className="space-y-2">
+   316→          <Label htmlFor="profile-phone">Phone</Label>
+   317→          <Input
+   318→            id="profile-phone"
+   319→            value={phone}
+   320→            onChange={(e) => setPhone(e.target.value)}
+   321→            placeholder="Optional"
+   322→            type="tel"
+   323→            autoComplete="tel"
+   324→          />
+   325→        </div>
+   326→
+   327→        <div className="space-y-2">
+   328→          <Label htmlFor="profile-photo">Photo URL</Label>
+   329→          <Input
+   330→            id="profile-photo"
+   331→            value={photo}
+   332→            onChange={(e) => setPhoto(e.target.value)}
+   333→            placeholder="https://..."
+   334→            type="url"
+   335→            inputMode="url"
+   336→          />
+   337→          <p className="text-xs text-muted-foreground">
+   338→            Paste a direct image URL. Optional.
+   339→          </p>
+   340→        </div>
+   341→
+   342→        <div className="space-y-2">
+   343→          <Label>College</Label>
+   344→          <CollegeSelect
+   345→            value={collegeId}
+   346→            onChange={(id) => setCollegeId(id)}
+   347→            placeholder="Select your college"
+   348→          />
+   349→          <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+   350→            <Info className="mt-0.5 size-3 shrink-0 text-primary/70" />
+   351→            <span>
+   352→              Changing your college affects which listings you see prioritized
+   353→              in the marketplace.
+   354→            </span>
+   355→          </p>
+   356→        </div>
+   357→
+   358→        <div className="flex justify-end pt-1">
+   359→          <Button onClick={handleSave} disabled={saving} className="gap-2">
+   360→            {saving ? (
+   361→              <Loader2 className="size-4 animate-spin" />
+   362→            ) : (
+   363→              <CheckCircle2 className="size-4" />
+   364→            )}
+   365→            Save changes
+   366→          </Button>
+   367→        </div>
+   368→      </CardContent>
+   369→    </Card>
+   370→  )
+   371→}
+   372→
+   373→// ----------------------------------------------------------------------------
+   374→// My Listings tab
+   375→// ----------------------------------------------------------------------------
+   376→
+   377→function ListingsTab({
+   378→  products,
+   379→  loading,
+   380→  error,
+   381→  onRefresh,
+   382→  onRetry,
+   383→  navigate,
+   384→}: {
+   385→  products: Product[]
+   386→  loading: boolean
+   387→  error: string | null
+   388→  onRefresh: () => void
+   389→  onRetry: () => void
+   390→  navigate: Navigate
+   391→}) {
+   392→  if (loading) {
+   393→    return <ProductGridSkeleton count={4} />
+   394→  }
+   395→  if (error) {
+   396→    return (
+   397→      <EmptyState
+   398→        icon={<Package className="size-7" />}
+   399→        title="Something went wrong"
+   400→        description={error}
+   401→        action={
+   402→          <Button onClick={onRetry} variant="outline">
+   403→            Retry
+   404→          </Button>
+   405→        }
+   406→      />
+   407→    )
+   408→  }
+   409→  if (products.length === 0) {
+   410→    return (
+   411→      <EmptyState
+   412→        icon={<Package className="size-7" />}
+   413→        title="No listings yet"
+   414→        description="Post your first item to the marketplace."
+   415→        action={
+   416→          <Button onClick={() => navigate("new-listing")} className="gap-2">
+   417→            <Plus className="size-4" />
+   418→            Sell something
+   419→          </Button>
+   420→        }
+   421→      />
+   422→    )
+   423→  }
+   424→
+   425→  return (
+   426→    <div className="space-y-4">
+   427→      <div className="flex justify-end">
+   428→        <Button onClick={() => navigate("new-listing")} className="gap-2 self-start sm:self-auto">
+   429→          <Plus className="size-4" />
+   430→          Post a listing
+   431→        </Button>
+   432→      </div>
+   433→      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+   434→        {products.map((p) => (
+   435→          <MyProductCard
+   436→            key={p.id}
+   437→            product={p}
+   438→            onRefresh={onRefresh}
+   439→            onClick={() => navigate("product", { id: p.id })}
+   440→          />
+   441→        ))}
+   442→      </div>
+   443→    </div>
+   444→  )
+   445→}
+   446→
+   447→function MyProductCard({
+   448→  product,
+   449→  onRefresh,
+   450→  onClick,
+   451→}: {
+   452→  product: Product
+   453→  onRefresh: () => void
+   454→  onClick: () => void
+   455→}) {
+   456→  const { toast } = useToast()
+   457→  const [statusLoading, setStatusLoading] = useState(false)
+   458→  const [bumpLoading, setBumpLoading] = useState(false)
+   459→  const [deleteLoading, setDeleteLoading] = useState(false)
+   460→
+   461→  const sold = product.status === "SOLD"
+   462→  const cover = product.images?.[0] || "/placeholder.svg"
+   463→
+   464→  async function handleStatus() {
+   465→    setStatusLoading(true)
+   466→    const next = sold ? "ACTIVE" : "SOLD"
+   467→    try {
+   468→      const r = await fetch(`/api/products/${product.id}`, {
+   469→        method: "PATCH",
+   470→        headers: { "Content-Type": "application/json" },
+   471→        body: JSON.stringify({ status: next }),
+   472→      })
+   473→      if (!r.ok) throw new Error("Failed to update")
+   474→      toast({
+   475→        title: next === "SOLD" ? "Marked as sold" : "Marked as active",
+   476→      })
+   477→      onRefresh()
+   478→    } catch {
+   479→      toast({ title: "Update failed", variant: "destructive" })
+   480→    } finally {
+   481→      setStatusLoading(false)
+   482→    }
+   483→  }
+   484→
+   485→  async function handleBump() {
+   486→    setBumpLoading(true)
+   487→    try {
+   488→      const r = await fetch(`/api/products/${product.id}/bump`, { method: "POST" })
+   489→      const data = await r.json().catch(() => ({}))
+   490→      if (!r.ok) {
+   491→        throw new Error(data.error || "Failed to bump")
+   492→      }
+   493→      toast({
+   494→        title: "Listing bumped!",
+   495→        description: "It now appears near the top. You can bump again in 24h.",
+   496→      })
+   497→      onRefresh()
+   498→    } catch (e) {
+   499→      toast({
+   500→        title: "Could not bump",
+   501→        description: e instanceof Error ? e.message : "Try again later.",
+   502→        variant: "destructive",
+   503→      })
+   504→    } finally {
+   505→      setBumpLoading(false)
+   506→    }
+   507→  }
+   508→
+   509→  async function handleDelete() {
+   510→    setDeleteLoading(true)
+   511→    try {
+   512→      const r = await fetch(`/api/products/${product.id}`, { method: "DELETE" })
+   513→      if (!r.ok) throw new Error("Failed to delete")
+   514→      toast({ title: "Listing deleted" })
+   515→      onRefresh()
+   516→    } catch {
+   517→      toast({ title: "Delete failed", variant: "destructive" })
+   518→    } finally {
+   519→      setDeleteLoading(false)
+   520→    }
+   521→  }
+   522→
+   523→  return (
+   524→    <div className="flex flex-col overflow-hidden rounded-2xl border border-border bg-card">
+   525→      {/* Clickable card area */}
+   526→      <button
+   527→        type="button"
+   528→        onClick={onClick}
+   529→        aria-label={`View ${product.title}`}
+   530→        className="group flex flex-1 items-start gap-3 p-3 text-left transition hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+   531→      >
+   532→        <div className="relative size-20 shrink-0 overflow-hidden rounded-lg bg-muted">
+   533→          <img
+   534→            src={cover}
+   535→            alt={product.title}
+   536→            className={cn(
+   537→              "h-full w-full object-cover transition duration-300 group-hover:scale-105",
+   538→              sold && "opacity-60"
+   539→            )}
+   540→            loading="lazy"
+   541→          />
+   542→          {sold && (
+   543→            <Badge
+   544→              variant="destructive"
+   545→              className="absolute left-1 top-1 px-1.5 py-0.5 text-[10px]"
+   546→            >
+   547→              SOLD
+   548→            </Badge>
+   549→          )}
+   550→        </div>
+   551→        <div className="min-w-0 flex-1">
+   552→          <h3 className="line-clamp-1 font-medium text-foreground">
+   553→            {product.title}
+   554→          </h3>
+   555→          <p className="mt-0.5 text-lg font-bold text-primary">
+   556→            {inr(product.price)}
+   557→          </p>
+   558→          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+   559→            <Badge variant="secondary" className="text-[10px]">
+   560→              {product.condition}
+   561→            </Badge>
+   562→            <Badge variant="outline" className="text-[10px]">
+   563→              {product.category}
+   564→            </Badge>
+   565→          </div>
+   566→          <p className="mt-1 text-xs text-muted-foreground">
+   567→            Posted {format(new Date(product.createdAt), "d MMM yyyy")}
+   568→          </p>
+   569→        </div>
+   570→      </button>
+   571→
+   572→      {/* Actions */}
+   573→      <div className="grid grid-cols-3 gap-1.5 border-t border-border bg-muted/30 p-2">
+   574→        <Button
+   575→          size="sm"
+   576→          variant={sold ? "outline" : "secondary"}
+   577→          onClick={handleStatus}
+   578→          disabled={statusLoading}
+   579→          className="gap-1 text-xs"
+   580→          aria-label={sold ? "Mark as active" : "Mark as sold"}
+   581→        >
+   582→          {statusLoading ? (
+   583→            <Loader2 className="size-3 animate-spin" />
+   584→          ) : sold ? (
+   585→            <CheckCircle2 className="size-3" />
+   586→          ) : (
+   587→            <ShoppingCart className="size-3" />
+   588→          )}
+   589→          <span className="hidden sm:inline">{sold ? "Active" : "Sold"}</span>
+   590→        </Button>
+   591→        <Button
+   592→          size="sm"
+   593→          variant="outline"
+   594→          onClick={handleBump}
+   595→          disabled={bumpLoading}
+   596→          className="gap-1 text-xs"
+   597→          aria-label="Bump listing"
+   598→        >
+   599→          {bumpLoading ? (
+   600→            <Loader2 className="size-3 animate-spin" />
+   601→          ) : (
+   602→            <TrendingUp className="size-3" />
+   603→          )}
+   604→          <span className="hidden sm:inline">Bump</span>
+   605→        </Button>
+   606→        <AlertDialog>
+   607→          <AlertDialogTrigger asChild>
+   608→            <Button
+   609→              size="sm"
+   610→              variant="outline"
+   611→              className="gap-1 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+   612→              aria-label="Delete listing"
+   613→            >
+   614→              <Trash2 className="size-3" />
+   615→              <span className="hidden sm:inline">Delete</span>
+   616→            </Button>
+   617→          </AlertDialogTrigger>
+   618→          <AlertDialogContent>
+   619→            <AlertDialogHeader>
+   620→              <AlertDialogTitle>Delete this listing?</AlertDialogTitle>
+   621→              <AlertDialogDescription>
+   622→                This action cannot be undone. The listing will be permanently
+   623→                removed.
+   624→              </AlertDialogDescription>
+   625→            </AlertDialogHeader>
+   626→            <AlertDialogFooter>
+   627→              <AlertDialogCancel disabled={deleteLoading}>Cancel</AlertDialogCancel>
+   628→              <AlertDialogAction
+   629→                onClick={handleDelete}
+   630→                disabled={deleteLoading}
+   631→                className="gap-2 bg-destructive text-white hover:bg-destructive/90"
+   632→              >
+   633→                {deleteLoading && <Loader2 className="size-4 animate-spin" />}
+   634→                Delete
+   635→              </AlertDialogAction>
+   636→            </AlertDialogFooter>
+   637→          </AlertDialogContent>
+   638→        </AlertDialog>
+   639→      </div>
+   640→    </div>
+   641→  )
+   642→}
+   643→
+   644→// ----------------------------------------------------------------------------
+   645→// My Writing Posts tab
+   646→// ----------------------------------------------------------------------------
+   647→
+   648→const WRITING_STATUS_LABEL: Record<string, string> = {
+   649→  OPEN: "Open",
+   650→  IN_PROGRESS: "In progress",
+   651→  COMPLETED: "Completed",
+   652→}
+   653→
+   654→const WRITING_STATUS_STYLES: Record<string, string> = {
+   655→  OPEN: "bg-primary/10 text-primary border-primary/30",
+   656→  IN_PROGRESS: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30",
+   657→  COMPLETED: "bg-muted text-muted-foreground border-border",
+   658→}
+   659→
+   660→function WritingTab({
+   661→  posts,
+   662→  loading,
+   663→  error,
+   664→  onRefresh,
+   665→  onRetry,
+   666→  navigate,
+   667→}: {
+   668→  posts: WritingPost[]
+   669→  loading: boolean
+   670→  error: string | null
+   671→  onRefresh: () => void
+   672→  onRetry: () => void
+   673→  navigate: Navigate
+   674→}) {
+   675→  if (loading) {
+   676→    return <WritingListSkeleton count={4} />
+   677→  }
+   678→  if (error) {
+   679→    return (
+   680→      <EmptyState
+   681→        icon={<PenLine className="size-7" />}
+   682→        title="Something went wrong"
+   683→        description={error}
+   684→        action={
+   685→          <Button onClick={onRetry} variant="outline">
+   686→            Retry
+   687→          </Button>
+   688→        }
+   689→      />
+   690→    )
+   691→  }
+   692→  if (posts.length === 0) {
+   693→    return (
+   694→      <EmptyState
+   695→        icon={<PenLine className="size-7" />}
+   696→        title="No writing posts yet"
+   697→        description="Post a writing request or offer your writing services."
+   698→        action={
+   699→          <Button
+   700→            onClick={() => navigate("new-writing", { extra: { type: "need" } })}
+   701→            className="gap-2"
+   702→          >
+   703→            <Plus className="size-4" />
+   704→            Post a writing request
+   705→          </Button>
+   706→        }
+   707→      />
+   708→    )
+   709→  }
+   710→
+   711→  return (
+   712→    <div className="space-y-4">
+   713→      <div className="flex justify-end">
+   714→        <Button
+   715→          onClick={() => navigate("new-writing", { extra: { type: "need" } })}
+   716→          className="gap-2 self-start sm:self-auto"
+   717→        >
+   718→          <Plus className="size-4" />
+   719→          Post
+   720→        </Button>
+   721→      </div>
+   722→      <div className="grid gap-4 md:grid-cols-2">
+   723→        {posts.map((p) => (
+   724→          <MyWritingCard key={p.id} post={p} onRefresh={onRefresh} />
+   725→        ))}
+   726→      </div>
+   727→    </div>
+   728→  )
+   729→}
+   730→
+   731→function MyWritingCard({
+   732→  post,
+   733→  onRefresh,
+   734→}: {
+   735→  post: WritingPost
+   736→  onRefresh: () => void
+   737→}) {
+   738→  const { toast } = useToast()
+   739→  const [statusLoading, setStatusLoading] = useState(false)
+   740→  const [deleteLoading, setDeleteLoading] = useState(false)
+   741→
+   742→  const isNeedWriter = post.type === "NEED_WRITER"
+   743→
+   744→  async function handleStatusChange(next: string) {
+   745→    if (next === post.status) return
+   746→    setStatusLoading(true)
+   747→    try {
+   748→      const r = await fetch(`/api/writing/${post.id}`, {
+   749→        method: "PATCH",
+   750→        headers: { "Content-Type": "application/json" },
+   751→        body: JSON.stringify({ status: next }),
+   752→      })
+   753→      if (!r.ok) {
+   754→        const err = await r.json().catch(() => ({}))
+   755→        throw new Error(err.error || "Failed to update")
+   756→      }
+   757→      toast({
+   758→        title: "Status updated",
+   759→        description: `Marked as ${WRITING_STATUS_LABEL[next].toLowerCase()}.`,
+   760→      })
+   761→      onRefresh()
+   762→    } catch (e) {
+   763→      toast({
+   764→        title: "Update failed",
+   765→        description: e instanceof Error ? e.message : "Try again later.",
+   766→        variant: "destructive",
+   767→      })
+   768→    } finally {
+   769→      setStatusLoading(false)
+   770→    }
+   771→  }
+   772→
+   773→  async function handleDelete() {
+   774→    setDeleteLoading(true)
+   775→    try {
+   776→      const r = await fetch(`/api/writing/${post.id}`, { method: "DELETE" })
+   777→      if (!r.ok) throw new Error("Failed to delete")
+   778→      toast({ title: "Post deleted" })
+   779→      onRefresh()
+   780→    } catch {
+   781→      toast({ title: "Delete failed", variant: "destructive" })
+   782→    } finally {
+   783→      setDeleteLoading(false)
+   784→    }
+   785→  }
+   786→
+   787→  return (
+   788→    <article className="flex flex-col rounded-2xl border border-border bg-card p-4">
+   789→      {/* Header badges */}
+   790→      <div className="flex flex-wrap items-center gap-2">
+   791→        <Badge
+   792→          variant={isNeedWriter ? "default" : "secondary"}
+   793→          className={cn(
+   794→            isNeedWriter && "border-transparent bg-primary/10 text-primary"
+   795→          )}
+   796→        >
+   797→          {isNeedWriter ? "Need a Writer" : "Writer Available"}
+   798→        </Badge>
+   799→        <span
+   800→          className={cn(
+   801→            "inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium",
+   802→            WRITING_STATUS_STYLES[post.status]
+   803→          )}
+   804→        >
+   805→          {WRITING_STATUS_LABEL[post.status]}
+   806→        </span>
+   807→      </div>
+   808→
+   809→      {/* Title + subject */}
+   810→      <h3 className="mt-2 line-clamp-1 text-lg font-semibold text-foreground">
+   811→        {post.title}
+   812→      </h3>
+   813→      <div className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+   814→        <BookOpen className="size-3.5 shrink-0 text-primary/70" />
+   815→        <span className="truncate">{post.subject}</span>
+   816→      </div>
+   817→
+   818→      {/* Info */}
+   819→      <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+   820→        <div>
+   821→          <dt className="text-xs text-muted-foreground">
+   822→            {isNeedWriter ? "Pages" : "Subjects"}
+   823→          </dt>
+   824→          <dd className="font-medium text-foreground">
+   825→            {isNeedWriter
+   826→              ? post.pageCount != null
+   827→                ? String(post.pageCount)
+   828→                : "—"
+   829→              : `${post.subjects.length} listed`}
+   830→          </dd>
+   831→        </div>
+   832→        <div>
+   833→          <dt className="text-xs text-muted-foreground">
+   834→            {isNeedWriter ? "Total" : "Per page"}
+   835→          </dt>
+   836→          <dd className="font-medium text-primary">
+   837→            {isNeedWriter
+   838→              ? post.totalPrice != null
+   839→                ? inr(post.totalPrice)
+   840→                : "—"
+   841→              : inr(post.pricePerPage)}
+   842→          </dd>
+   843→        </div>
+   844→      </dl>
+   845→
+   846→      {/* Actions */}
+   847→      <div className="mt-auto flex items-center gap-2 pt-4">
+   848→        <div className="flex items-center gap-1.5">
+   849→          <Label htmlFor={`status-${post.id}`} className="sr-only">
+   850→            Status
+   851→          </Label>
+   852→          <Select
+   853→            value={post.status}
+   854→            onValueChange={handleStatusChange}
+   855→            disabled={statusLoading}
+   856→          >
+   857→            <SelectTrigger
+   858→              id={`status-${post.id}`}
+   859→              className="h-8 w-[150px] text-xs"
+   860→              size="sm"
+   861→              aria-label="Update post status"
+   862→            >
+   863→              {statusLoading ? (
+   864→                <Loader2 className="size-3 animate-spin" />
+   865→              ) : null}
+   866→              <SelectValue />
+   867→            </SelectTrigger>
+   868→            <SelectContent>
+   869→              <SelectItem value="OPEN">Open</SelectItem>
+   870→              <SelectItem value="IN_PROGRESS">In progress</SelectItem>
+   871→              <SelectItem value="COMPLETED">Completed</SelectItem>
+   872→            </SelectContent>
+   873→          </Select>
+   874→        </div>
+   875→
+   876→        <AlertDialog>
+   877→          <AlertDialogTrigger asChild>
+   878→            <Button
+   879→              size="sm"
+   880→              variant="outline"
+   881→              className="ml-auto gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
+   882→              aria-label="Delete writing post"
+   883→            >
+   884→              <Trash2 className="size-3.5" />
+   885→              <span className="hidden sm:inline">Delete</span>
+   886→            </Button>
+   887→          </AlertDialogTrigger>
+   888→          <AlertDialogContent>
+   889→            <AlertDialogHeader>
+   890→              <AlertDialogTitle>Delete this writing post?</AlertDialogTitle>
+   891→              <AlertDialogDescription>
+   892→                This action cannot be undone. The post will be permanently
+   893→                removed.
+   894→              </AlertDialogDescription>
+   895→            </AlertDialogHeader>
+   896→            <AlertDialogFooter>
+   897→              <AlertDialogCancel disabled={deleteLoading}>Cancel</AlertDialogCancel>
+   898→              <AlertDialogAction
+   899→                onClick={handleDelete}
+   900→                disabled={deleteLoading}
+   901→                className="gap-2 bg-destructive text-white hover:bg-destructive/90"
+   902→              >
+   903→                {deleteLoading && <Loader2 className="size-4 animate-spin" />}
+   904→                Delete
+   905→              </AlertDialogAction>
+   906→            </AlertDialogFooter>
+   907→          </AlertDialogContent>
+   908→        </AlertDialog>
+   909→      </div>
+   910→    </article>
+   911→  )
+   912→}
+   913→

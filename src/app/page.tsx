@@ -5,6 +5,7 @@ import { useAuth } from "@/store/auth-store"
 import { useNav } from "@/hooks/use-nav"
 import { Header } from "@/components/site/header"
 import { Footer } from "@/components/site/footer"
+import { BottomNav } from "@/components/site/bottom-nav"
 import { AuthModal } from "@/components/site/auth-modal"
 import { OnboardingModal } from "@/components/site/onboarding-modal"
 import { LoadingMarketplace, ViewRouter } from "@/components/view-router"
@@ -19,7 +20,7 @@ export default function Home() {
 
 function Shell() {
   const { user, loading, fetchUser } = useAuth()
-  const { view, navigate } = useNav()
+  const { view, conv, navigate } = useNav()
   const [authOpen, setAuthOpen] = useState(false)
 
   // Fetch the current user once on mount.
@@ -35,25 +36,35 @@ function Shell() {
   const authModalOpen = authOpen || requiresAuth
   const onboardingOpen = Boolean(user && !user.onboarded)
 
+  // Chat visibility logic: when the user is inside a conversation, hide the
+  // header/footer/bottom-nav so the chat can use the full viewport.
+  const isChatView = view === "chat"
+  const isInConversation = isChatView && !!conv
+
   if (loading) return <LoadingMarketplace />
 
   return (
     <div className="flex min-h-screen flex-col">
-      <Header onSignIn={() => setAuthOpen(true)} />
+      {!isInConversation && <Header onSignIn={() => setAuthOpen(true)} />}
       <main className="flex-1">
-        <div className="mx-auto w-full max-w-7xl px-4 py-6">
+        {isChatView ? (
           <ViewRouter />
-        </div>
+        ) : (
+          <div className="mx-auto w-full max-w-7xl px-4 py-6 pb-28 md:pb-6">
+            <ViewRouter />
+          </div>
+        )}
       </main>
-      <Footer />
+      {!isChatView && <Footer />}
+      {!isInConversation && <BottomNav />}
       <AuthModal
         open={authModalOpen}
         onOpenChange={(open) => {
           // If the modal was force-opened by a protected route and the user
-          // dismisses it, send them back to the marketplace instead of
-          // leaving them on an auth-gated view.
+          // dismisses it, send them back to the home view instead of leaving
+          // them on an auth-gated view.
           if (!open && requiresAuth) {
-            navigate("marketplace")
+            navigate("home")
           }
           setAuthOpen(open)
         }}

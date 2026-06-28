@@ -53,6 +53,7 @@ import {
 } from "@/components/ui/alert-dialog"
 
 import { CollegeSelect } from "@/components/site/college-select"
+import { AvatarUpload } from "@/components/site/avatar-upload"
 import { EmptyState } from "@/components/shared/empty-state"
 import {
   ProductGridSkeleton,
@@ -288,17 +289,19 @@ function ProfileEditForm({ onSaved }: { onSaved: () => void }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
-        {/* Live avatar preview */}
+        {/* Profile photo upload */}
         <div className="flex items-center gap-4">
-          <Avatar className="size-16 border border-border">
-            {photoUrl ? <AvatarImage src={photoUrl} alt={name || "Avatar"} /> : null}
-            <AvatarFallback className="bg-primary/10 text-base font-semibold text-primary">
-              {initialsOf(name) || "?"}
-            </AvatarFallback>
-          </Avatar>
-          <p className="text-sm text-muted-foreground">
-            Your photo appears on listings and in chats.
-          </p>
+          <AvatarUpload
+            value={photoUrl || null}
+            onChange={(url) => setPhoto(url || "")}
+            name={name || "User"}
+          />
+          <div>
+            <p className="text-sm font-medium text-foreground">Profile photo</p>
+            <p className="text-xs text-muted-foreground">
+              Click the camera icon to upload. Shown on listings and in chats.
+            </p>
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -322,21 +325,6 @@ function ProfileEditForm({ onSaved }: { onSaved: () => void }) {
             type="tel"
             autoComplete="tel"
           />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="profile-photo">Photo URL</Label>
-          <Input
-            id="profile-photo"
-            value={photo}
-            onChange={(e) => setPhoto(e.target.value)}
-            placeholder="https://..."
-            type="url"
-            inputMode="url"
-          />
-          <p className="text-xs text-muted-foreground">
-            Paste a direct image URL. Optional.
-          </p>
         </div>
 
         <div className="space-y-2">
