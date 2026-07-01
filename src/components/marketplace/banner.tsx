@@ -1,7 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { AnimatePresence, motion } from "framer-motion"
+import { motion } from "framer-motion"
 import {
   ArrowRight,
   MessageCircle,
@@ -13,120 +12,24 @@ import { useAuth } from "@/store/auth-store"
 import { cn } from "@/lib/utils"
 
 /* ------------------------------------------------------------------ */
-/* BannerSlideshow                                                     */
+/* BannerSlideshow (now a single static banner image)                  */
 /* ------------------------------------------------------------------ */
 
-interface Slide {
-  image: string
-  title: string
-  subtitle: string
-  cta: { label: string; view: View }
-  accent: string
-}
-
-const SLIDES: Slide[] = [
-  {
-    image:
-      "https://raw.githubusercontent.com/Unknownpotato1/Storage-/main/file_00000000828471fab7919dfdb9a732b1.png",
-    title: "Buy & sell with students on your campus",
-    subtitle:
-      "Books, electronics, lab gear and more — at student-friendly prices.",
-    cta: { label: "Browse marketplace", view: "marketplace" },
-    accent: "from-primary/90 to-primary/60",
-  },
-  {
-    image: "/banners/banner2.png",
-    title: "Need a writer? Find one in your college",
-    subtitle: "Post your assignment, set your budget, hire a peer writer.",
-    cta: { label: "Open Writing Hub", view: "writing" },
-    accent: "from-emerald-600/90 to-teal-500/60",
-  },
-  {
-    image: "/banners/banner3.png",
-    title: "Chat in real time with sellers & writers",
-    subtitle: "Every conversation is tied to a listing for context.",
-    cta: { label: "View my chats", view: "chat" },
-    accent: "from-green-600/90 to-emerald-500/60",
-  },
-]
+const BANNER_IMAGE =
+  "https://raw.githubusercontent.com/Unknownpotato1/Storage-/main/file_00000000828471fab7919dfdb9a732b1.png"
 
 export function BannerSlideshow() {
-  const { navigate } = useNav()
-  const { user } = useAuth()
-  const [index, setIndex] = useState(0)
-  const [paused, setPaused] = useState(false)
-
-  useEffect(() => {
-    if (paused) return
-    const t = setInterval(() => {
-      setIndex((i) => (i + 1) % SLIDES.length)
-    }, 5000)
-    return () => clearInterval(t)
-  }, [paused])
-
-  const slide = SLIDES[index]
-
-  const handleCta = (view: View) => {
-    if (!user && (view === "chat" || view === "new-listing")) {
-      navigate("marketplace")
-      return
-    }
-    navigate(view)
-  }
-
   return (
     <section
-      aria-label="Featured banners"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
+      aria-label="CampusKart banner"
       className="relative overflow-hidden rounded-3xl border border-border bg-card"
     >
       <div className="relative aspect-[16/7] sm:aspect-[16/6] lg:aspect-[16/5]">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={index}
-            initial={{ opacity: 0, scale: 1.04 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.98 }}
-            transition={{ duration: 0.6, ease: "easeOut" }}
-            className="absolute inset-0"
-          >
-            <img
-              src={slide.image}
-              alt=""
-              className="h-full w-full object-cover"
-            />
-            <div
-              className={cn(
-                "absolute inset-0 bg-gradient-to-tr mix-blend-multiply",
-                slide.accent
-              )}
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
-
-            <div className="absolute inset-0 flex flex-col justify-end p-5 sm:p-8 lg:p-10">
-              <div className="mb-3 inline-flex w-fit items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold text-white backdrop-blur-sm">
-                <img src="/logo.png" alt="" className="size-3.5 rounded-sm object-cover" />
-                CampusKart
-              </div>
-              <h2 className="max-w-2xl text-xl font-bold text-white sm:text-2xl lg:text-3xl">
-                {slide.title}
-              </h2>
-              <p className="mt-2 max-w-xl text-sm text-white/85 sm:text-base">
-                {slide.subtitle}
-              </p>
-              <div className="mt-4">
-                <button
-                  type="button"
-                  onClick={() => handleCta(slide.cta.view)}
-                  className="rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-foreground shadow-lg transition hover:bg-white/90"
-                >
-                  {slide.cta.label}
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        </AnimatePresence>
+        <img
+          src={BANNER_IMAGE}
+          alt="CampusKart"
+          className="h-full w-full object-cover"
+        />
       </div>
     </section>
   )
