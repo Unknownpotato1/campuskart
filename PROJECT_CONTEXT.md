@@ -21,7 +21,7 @@
 > - Keep this file updated after major changes (bump the "Last updated" date)
 >
 > Last updated: July 2, 2026 · Status: ✅ Live in production on Vercel
-> Current commit: `7260d5e` "feat: replace header avatar+theme toggle with menu button + settings dialog"
+> Current commit: `8fddd4e` "fix(api): restore /api/upload route that was lost in c163fe4"
 
 ---
 
