@@ -20,8 +20,8 @@
 > - DO NOT bulk-import data into Firestore (causes quota exhaustion)
 > - Keep this file updated after major changes (bump the "Last updated" date)
 >
-> Last updated: July 1, 2026 · Status: ✅ Live in production on Vercel
-> Current commit: `886a17c` "handoff: restore all code to match production state"
+> Last updated: July 2, 2026 · Status: ✅ Live in production on Vercel
+> Current commit: `7260d5e` "feat: replace header avatar+theme toggle with menu button + settings dialog"
 
 ---
 
@@ -214,6 +214,8 @@ VERCEL_TOKEN=<token> vercel --prod --yes
 - ✅ Dark mode
 - ✅ Loading skeletons, toasts, empty states
 - ✅ Write-only user operations (survives Firestore read quota exhaustion)
+- ✅ Header menu (hamburger button → right-side Sheet with Browse / Account / Create sections)
+- ✅ Settings dialog (Appearance: Light/Dark/System theme picker; About; Help/FAQ)
 
 ---
 
