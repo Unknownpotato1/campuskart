@@ -21,7 +21,7 @@
 > - Keep this file updated after major changes (bump the "Last updated" date)
 >
 > Last updated: July 2, 2026 · Status: ✅ Live in production on Vercel
-> Current commit: `8fddd4e` "fix(api): restore /api/upload route that was lost in c163fe4"
+> Current commit: `4fa2753` "feat(banner): single static image, no slides, no overlay/text/button"
 
 ---
 
@@ -202,7 +202,7 @@ VERCEL_TOKEN=<token> vercel --prod --yes
 
 - ✅ Firebase Google Sign-In (resilient to Firestore quota)
 - ✅ Onboarding (37 hardcoded colleges, searchable — no Firestore read)
-- ✅ Home page (slideshow banner, category boxes, quick actions)
+- ✅ Home page (single static banner image, category boxes, quick actions)
 - ✅ Marketplace (filters, infinite scroll, same-college grouping, product detail)
 - ✅ Writing Hub (Need-a-Writer + I-Can-Write, tabs, filters)
 - ✅ Chat (WhatsApp-style, full-screen, profile pictures, image/file attachments, real-time)
