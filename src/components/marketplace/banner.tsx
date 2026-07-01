@@ -6,7 +6,6 @@ import {
   ArrowRight,
   MessageCircle,
   PenLine,
-  Sparkles,
   Store,
 } from "lucide-react"
 import { useNav, type View } from "@/hooks/use-nav"
@@ -106,7 +105,7 @@ export function BannerSlideshow() {
 
             <div className="absolute inset-0 flex flex-col justify-end p-5 sm:p-8 lg:p-10">
               <div className="mb-3 inline-flex w-fit items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold text-white backdrop-blur-sm">
-                <Sparkles className="size-3.5" />
+                <img src="/logo.png" alt="" className="size-3.5 rounded-sm object-cover" />
                 CampusKart
               </div>
               <h2 className="max-w-2xl text-xl font-bold text-white sm:text-2xl lg:text-3xl">

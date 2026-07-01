@@ -20,8 +20,9 @@ export const metadata: Metadata = {
     "Buy, sell, and collaborate with students on your campus. Marketplace for books, electronics & more, plus a Writing Hub for student writers.",
   keywords: ["CampusKart", "college marketplace", "student marketplace", "writing hub", "India colleges"],
   authors: [{ name: "CampusKart" }],
+  manifest: "/manifest.json",
   icons: {
-    icon: "/logo.svg",
+    icon: "/logo.png",
   },
   openGraph: {
     title: "CampusKart — College Marketplace & Writing Hub",

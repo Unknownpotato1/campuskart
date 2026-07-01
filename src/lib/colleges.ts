@@ -14,6 +14,7 @@ export const COLLEGES_SEED: CollegeSeed[] = [
   { name: "Aligarh Muslim University (AMU)", city: "Aligarh", state: "Uttar Pradesh" },
   { name: "KNIT Sultanpur", city: "Sultanpur", state: "Uttar Pradesh" },
   { name: "HBTI Kanpur", city: "Kanpur", state: "Uttar Pradesh" },
+  { name: "IIMT College of Engineering", city: "Greater Noida", state: "Uttar Pradesh" },
   // Delhi
   { name: "Delhi University (DU)", city: "Delhi", state: "Delhi" },
   { name: "IIT Delhi", city: "Delhi", state: "Delhi" },

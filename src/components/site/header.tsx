@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react"
 import {
-  GraduationCap,
   Home,
   Store,
   PenLine,
@@ -71,9 +70,7 @@ export function Header({ onSignIn }: { onSignIn: () => void }) {
           className="flex items-center gap-2 shrink-0"
           aria-label="CampusKart home"
         >
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <GraduationCap className="h-5 w-5" />
-          </div>
+          <img src="/logo.png" alt="CampusKart" className="h-9 w-9 rounded-xl object-cover" />
           <span className="text-lg font-bold tracking-tight">
             Campus<span className="text-primary">Kart</span>
           </span>

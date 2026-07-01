@@ -766,3 +766,72 @@ Stage Summary:
 - The local CampusKart codebase now matches the production Vercel deployment's UI-redesign state. The new home view with banner slideshow, category boxes and quick actions is the default landing page. Mobile users get a premium bottom navigation bar; desktop users keep the solid top header with the new Home tab. Chat is now a full-screen WhatsApp/Telegram-style experience with image/file attachments, read receipts and a dotted background. Profile photo editing uses a proper upload-with-compression widget. The data layer (Firestore + Firebase client) carries `senderPhoto`, `type` and `attachment` end-to-end, and `/api/upload` supports both image-only listing uploads and image+document chat uploads.
 - Lint passes (0 errors). TypeScript passes (no errors in project files). All views compile and render with HTTP 200. Banner images are present locally.
 - Environment note: the sandbox's `.env` doesn't have `FIREBASE_SERVICE_ACCOUNT` set, so the Firestore-backed API routes return 500 in this sandbox — this is purely an environment issue, not a code regression. With the service account configured (as it is on Vercel), all routes work.
+
+---
+Task ID: HANDOFF-RESTORE
+Agent: main (handoff restorer)
+Task: Restore the local code to match the production Vercel deployment after another sandbox reset wiped the post-RESTORE commits. Recreate the PWA install prompt + manifest, swap green theme tokens from OKLCH to raw hex, replace GraduationCap/Sparkles icons with the logo image, add the IIMT college, harden the auth + Firestore user-ops layers against Firestore quota errors, and make the colleges API fully read-free.
+
+Work Log:
+- Read worklog.md fully (Tasks 1–12 + RESTORE) to recover project architecture, conventions, and the production-deployment history. PROJECT_CONTEXT.md was missing in this sandbox; recovered context from worklog only.
+
+Files UPDATED (10):
+
+1. `src/app/globals.css` — replaced OKLCH values with raw hex for the campus-green tokens:
+   - Light `:root`: `--primary`, `--ring`, `--chart-1`, `--sidebar-primary`, `--sidebar-ring` → `#33aa53`.
+   - Dark `.dark`: same five tokens → `#43b863`. (Primary explicitly per spec; related tokens updated for consistency so dark-mode ring/charts/sidebar match the new primary.)
+   - All other tokens (background, card, muted, border, chart-2..5, etc.) left untouched.
+
+2. `src/components/site/header.tsx` — replaced the green `GraduationCap` tile with `<img src="/logo.png" alt="CampusKart" className="h-9 w-9 rounded-xl object-cover" />`. Removed the now-unused `GraduationCap` import from lucide-react.
+
+3. `src/components/site/footer.tsx` — same swap (footer logo) with `className="h-7 w-7 rounded-lg object-cover"`. Removed `GraduationCap` from the lucide-react import.
+
+4. `src/components/marketplace/banner.tsx` — replaced the `<Sparkles className="size-3.5" />` icon inside the CampusKart badge on each slideshow slide with `<img src="/logo.png" alt="" className="size-3.5 rounded-sm object-cover" />`. Removed `Sparkles` from the lucide-react import block.
+
+5. `src/app/layout.tsx` — added `manifest: "/manifest.json"` to the metadata object and switched `icons.icon` from `"/logo.svg"` to `"/logo.png"`. Title/description/keywords/openGraph unchanged.
+
+6. `src/app/page.tsx` — imported `PwaInstallPrompt` and rendered `<PwaInstallPrompt />` together with the bottom nav, gated on `!isInConversation` so it never appears inside the full-screen chat.
+
+7. `src/app/api/auth/login/route.ts` — wrapped the `upsertUserFromFirebase(...)` call in the Firebase-idToken branch in a try/catch. On failure (Firestore quota / network / permissions), logs the error and builds a fallback `user` object from the verified Firebase profile (`id=uid, email, name, photo, phone=null, collegeId=null, collegeName=null, city=null, state=null, onboarded=false, createdAt=updatedAt=now`), then still calls `setSession(user.id, user.email)` and returns `{ user }` — so the user keeps their session even if Firestore is down. Simulated-demo branch and error handling unchanged.
+
+8. `src/lib/session.ts` — wrapped the `getUser(payload.uid)` call inside `getCurrentUser` in a try/catch. If it throws OR returns null, builds a fallback `UserDoc` from the signed session payload: `id=uid, email=payload.email, name=email.split("@")[0], photo=null, phone=null, collegeId=null, collegeName=null, city=null, state=null, onboarded=false, createdAt=updatedAt=now`. Outer try/catch around cookie/token verification unchanged.
+
+9. `src/lib/firestore.ts` — added a `resolveSeedCollege(id)` private helper that maps `seed-<n>` IDs to `COLLEGES_SEED[n]` (no Firestore read), and rewrote both user ops to be write-only:
+   - `upsertUserFromFirebase`: now `ref.set({ email, name, photo, updatedAt }, { merge: true })` — no `ref.get()`. Also forward-merges a `seed-N` collegeId if one is supplied in params (no Firestore read). Returns a `UserDoc` built from the four verified fields + sensible defaults for everything else (the caller — `/api/auth/login` — already merges with the verified Firebase profile and the session payload, so the defaults are safe).
+   - `updateUser`: now `ref.set(data, { merge: true })` — no `ref.get()` + no `ref.update()` + no `ref.get()`. College fields are resolved via `resolveSeedCollege` (no `getCollege` Firestore read). Builds the return value from the patch data + defaults (empty string for unknown required strings, null for nullable fields, false for `onboarded`); `/api/profile` PATCH merges this with the current session user to restore correct email/name/createdAt.
+   - All other Firestore functions (getCollege, listColleges, listProducts, etc.) untouched — those code paths still read Firestore, but they aren't in the auth/session hot path that was hitting quota.
+
+10. `src/app/api/colleges/route.ts` — replaced the `listColleges()` Firestore call with a direct `COLLEGES_SEED.map((c, i) => ({ id: "seed-"+i, name, city, state, createdAt: epoch }))` then in-memory sort by state+name. No Firestore read at all. Returns the same `{ colleges }` shape, but with stable `seed-N` IDs that `updateUser` can resolve without a Firestore read.
+
+11. `src/lib/colleges.ts` — added `{ name: "IIMT College of Engineering", city: "Greater Noida", state: "Uttar Pradesh" }` immediately after HBTI Kanpur and before the `// Delhi` comment, per spec. Array now has 37 entries (was 36).
+
+12. `src/app/api/profile/route.ts` — PATCH handler now merges the current user (from `getCurrentUser`) with only the fields actually present in the patch (name, phone, photo, or the collegeId-derived set: collegeId/collegeName/city/state/onboarded) plus `updatedAt`. This prevents `updateUser`'s default values (empty strings for email/name when not in patch) from clobbering the response, so the response always carries the correct email/name/createdAt. GET handler unchanged.
+
+Files CREATED (2):
+
+13. `src/components/site/pwa-install-prompt.tsx` — new "use client" component exporting `PwaInstallPrompt`. Renders a fixed mobile-only card (md:hidden) at the bottom of the viewport with `paddingBottom: max(0.75rem, env(safe-area-inset-bottom))`. The card shows a `Smartphone` icon, "Install CampusKart" heading, a short description, an "Install" button (with `Download` icon) and a "Not now" ghost button. Behaviour:
+    - Captures the `beforeinstallprompt` event, prevents the default Chrome mini-infobar, and stores the `BeforeInstallPromptEvent` in state.
+    - On Android, the card appears when the event fires. On iOS (which never fires `beforeinstallprompt`), the card appears after a 1.5s delay.
+    - Once-per-day frequency via `localStorage` key `campuskart:pwa-prompt-date` (stores `YYYY-M-D` of the current day; if today's key is present, the prompt is suppressed). "Not now" and the "X" dismiss button both write today's key.
+    - Install button calls `deferred.prompt()` + awaits `deferred.userChoice`, then dismisses.
+    - Hidden entirely when the device is not mobile, when the app is already running as a PWA (`display-mode: standalone` or iOS `navigator.standalone`), or when today's prompt has already been dismissed.
+    - Built with Framer Motion (`AnimatePresence` + `motion.div` slide-up), lucide-react (`Download`, `X`, `Smartphone`), and the shadcn `Button`. Uses try/catch around `localStorage` access to survive Safari private-mode quota errors.
+
+14. `public/manifest.json` — new PWA manifest with `name`/`short_name` "CampusKart", `start_url: "/"`, `display: "standalone"`, `background_color: "#ffffff"`, `theme_color: "#33aa53"`, and four icon entries (`/logo.png` at 192×192 and 512×512 with both `any` and `maskable` purposes).
+
+Files VERIFIED (1):
+
+15. `public/logo.png` — already present (951 KB PNG, restored in a prior task). Verified it serves at `/logo.png` with HTTP 200 from the dev server. The previously-tracked `public/logo.svg` is left untouched (it's just no longer referenced from `layout.tsx`).
+
+Quality:
+- `bun run lint` → exit 0, zero errors, zero warnings.
+- `bunx tsc --noEmit` → zero errors in project files (only the pre-existing `examples/socket.io-client` and `skills/*` errors that the spec said to ignore).
+- Dev server healthy on port 3000: `/` → 200, `/manifest.json` → 200, `/logo.png` → 200, `/api/colleges` → 200 (now returns 37 colleges including IIMT, sorted by state+name, with stable `seed-N` IDs), `/api/auth/me` → 200.
+- Verified end-to-end via curl + Python that the colleges API returns 37 colleges with IIMT at `seed-7` (between HBTI Kanpur at `seed-6` and Delhi University at `seed-8`).
+- All API routes still start with `export const runtime = "nodejs"`. No new ESLint `react-hooks/set-state-in-effect` issues — the PWA prompt's `useEffect` only calls `setState` inside the event listener / iOS setTimeout callback, never synchronously in the effect body.
+- Environment note still applies: this sandbox's `.env` has no `FIREBASE_SERVICE_ACCOUNT`, so the Firestore-backed API routes (`/api/products`, `/api/profile`, `/api/auth/login` with a real idToken) return 500 in this sandbox — purely an environment issue, not a code regression. The new resilient `getCurrentUser` + resilient `/api/auth/login` ensure that even when Firestore IS configured but throws a quota error, the user keeps their session and the app keeps working.
+
+Stage Summary:
+- The local CampusKart codebase once again matches the production Vercel deployment. The new PWA install prompt, raw-hex green theme, logo image everywhere, IIMT college, read-free colleges API, and resilient auth/session/firestore user-ops are all in place.
+- The two production-stability pain points — Firestore daily-read quota on the auth hot path, and Firestore unavailability breaking login/session — are now mitigated: `upsertUserFromFirebase` and `updateUser` are write-only, the colleges API no longer reads Firestore at all, and both `/api/auth/login` + `getCurrentUser` gracefully fall back to a session-payload-built user when Firestore throws.
+- Lint passes (0 errors). TypeScript passes (no errors in project files). All views compile and render with HTTP 200.

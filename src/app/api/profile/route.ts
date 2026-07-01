@@ -23,7 +23,24 @@ export async function PATCH(req: NextRequest) {
   if (typeof body.photo === "string") patch.photo = body.photo
   if (body.collegeId !== undefined) patch.collegeId = body.collegeId
   const updated = await updateUser(user.id, patch)
-  return NextResponse.json({ user: updated })
+
+  // updateUser performs NO Firestore reads, so its return value uses defaults
+  // for any field that wasn't part of the patch. Merge with the current user
+  // so the response keeps the correct email/name/createdAt/etc. and only
+  // overwrites fields that were actually updated.
+  const merged = { ...user }
+  if ("name" in patch) merged.name = updated.name
+  if ("phone" in patch) merged.phone = updated.phone
+  if ("photo" in patch) merged.photo = updated.photo
+  if ("collegeId" in patch) {
+    merged.collegeId = updated.collegeId
+    merged.collegeName = updated.collegeName
+    merged.city = updated.city
+    merged.state = updated.state
+    merged.onboarded = updated.onboarded
+  }
+  merged.updatedAt = updated.updatedAt
+  return NextResponse.json({ user: merged })
 }
 
 // Keep getUser referenced for type inference

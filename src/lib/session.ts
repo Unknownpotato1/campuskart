@@ -69,8 +69,32 @@ export async function getCurrentUser(): Promise<UserDoc | null> {
     if (!token) return null
     const payload = await verifySessionToken(token)
     if (!payload) return null
-    const user = await getUser(payload.uid)
-    return user
+
+    // Resilient user lookup: if Firestore is unavailable (quota, not
+    // configured, transient error), still return a usable user object built
+    // from the signed session payload so an authenticated user isn't logged
+    // out just because Firestore is having a bad day.
+    try {
+      const user = await getUser(payload.uid)
+      if (user) return user
+    } catch (e) {
+      console.error("getUser failed; returning fallback user from session payload", e)
+    }
+    const ts = new Date().toISOString()
+    return {
+      id: payload.uid,
+      email: payload.email,
+      name: payload.email.split("@")[0],
+      photo: null,
+      phone: null,
+      collegeId: null,
+      collegeName: null,
+      city: null,
+      state: null,
+      onboarded: false,
+      createdAt: ts,
+      updatedAt: ts,
+    }
   } catch {
     return null
   }

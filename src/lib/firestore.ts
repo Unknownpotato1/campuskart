@@ -24,6 +24,22 @@ import { COLLEGES_SEED } from "@/lib/colleges"
 // ── Collection helpers ───────────────────────────────────────────────────────
 const nowIso = () => new Date().toISOString()
 
+// Resolve a `seed-<index>` college ID against the in-memory COLLEGES_SEED
+// array without hitting Firestore. Returns null for non-seed IDs or out-of
+// -range indices.
+function resolveSeedCollege(id: string): {
+  id: string
+  name: string
+  city: string
+  state: string
+} | null {
+  if (!id || !id.startsWith("seed-")) return null
+  const n = Number.parseInt(id.slice(5), 10)
+  if (!Number.isFinite(n) || n < 0 || n >= COLLEGES_SEED.length) return null
+  const c = COLLEGES_SEED[n]
+  return { id: `seed-${n}`, name: c.name, city: c.city, state: c.state }
+}
+
 // Firestore stores arrays natively, so we keep images/subjects/participants as
 // real arrays (no JSON.stringify). The frontend types already expect arrays.
 
@@ -58,48 +74,66 @@ export async function upsertUserFromFirebase(params: {
 }): Promise<UserDoc> {
   const { uid, email, name, photo } = params
   const ref = adminDb.collection("users").doc(uid)
-  const snap = await ref.get()
   const ts = nowIso()
-  if (!snap.exists) {
-    const data: Omit<UserDoc, "id"> = {
-      email,
-      name,
-      photo,
-      phone: null,
-      collegeId: null,
-      collegeName: null,
-      city: null,
-      state: null,
-      onboarded: false,
-      createdAt: ts,
-      updatedAt: ts,
+  // Write-only: merge the verified Firebase profile fields onto the doc
+  // (creating it if missing) without first reading it. This avoids the
+  // Firestore read that used to happen here and keeps the function resilient
+  // under high traffic. If the doc already exists, the merge preserves any
+  // previously-set fields (phone, collegeId, etc.) that we don't have here.
+  await ref.set({ email, name, photo, updatedAt: ts }, { merge: true })
+
+  // If a `seed-<n>` collegeId was somehow supplied alongside the Firebase
+  // profile (forward-compat), resolve it from the seed array — no Firestore
+  // read.
+  const extra = params as { collegeId?: string }
+  if (typeof extra.collegeId === "string" && extra.collegeId.startsWith("seed-")) {
+    const college = resolveSeedCollege(extra.collegeId)
+    if (college) {
+      await ref.set(
+        {
+          collegeId: college.id,
+          collegeName: college.name,
+          city: college.city,
+          state: college.state,
+          onboarded: true,
+        },
+        { merge: true }
+      )
     }
-    await ref.set(data)
-    return { id: uid, ...data }
   }
-  // Update name/photo if changed
-  const existing = snap.data() as Omit<UserDoc, "id">
-  const patch: Record<string, unknown> = { updatedAt: ts }
-  if (existing.name !== name) patch.name = name
-  if (photo && existing.photo !== photo) patch.photo = photo
-  await ref.update(patch)
-  return { id: uid, ...{ ...existing, ...patch } as Omit<UserDoc, "id"> }
+
+  // Return a user object built from the data we just wrote + sensible
+  // defaults for fields we don't have (callers that need the real values
+  // should call getUser or merge with the current session user).
+  return {
+    id: uid,
+    email,
+    name,
+    photo,
+    phone: null,
+    collegeId: null,
+    collegeName: null,
+    city: null,
+    state: null,
+    onboarded: false,
+    createdAt: ts,
+    updatedAt: ts,
+  }
 }
 
 export async function updateUser(uid: string, patch: Record<string, unknown>): Promise<UserDoc> {
   const ref = adminDb.collection("users").doc(uid)
-  const snap = await ref.get()
-  if (!snap.exists) throw new Error("User not found")
-  const data = patch
-  // If collegeId is being set, also resolve college name/city/state.
-  if ("collegeId" in patch) {
-    if (patch.collegeId === null || patch.collegeId === "") {
+  const data: Record<string, unknown> = { ...patch }
+  // Resolve college fields from the seed array (no Firestore read).
+  if ("collegeId" in data) {
+    if (data.collegeId === null || data.collegeId === "") {
       data.collegeId = null
       data.collegeName = null
       data.city = null
       data.state = null
+      data.onboarded = true
     } else {
-      const college = await getCollege(String(patch.collegeId))
+      const college = resolveSeedCollege(String(data.collegeId))
       if (college) {
         data.collegeId = college.id
         data.collegeName = college.name
@@ -110,9 +144,27 @@ export async function updateUser(uid: string, patch: Record<string, unknown>): P
     }
   }
   data.updatedAt = nowIso()
-  await ref.update(data)
-  const updated = await ref.get()
-  return { id: uid, ...(updated.data() as Omit<UserDoc, "id">) }
+  // Write-only: merge the patch onto the doc without first reading it.
+  await ref.set(data, { merge: true })
+
+  // Build the return value from the patch data + defaults. Fields not present
+  // in the patch are filled with defaults; callers (e.g. /api/profile PATCH)
+  // merge this with the previously-known user doc so they keep correct
+  // email/name/createdAt values.
+  return {
+    id: uid,
+    email: typeof data.email === "string" ? data.email : "",
+    name: typeof data.name === "string" ? data.name : "",
+    photo: typeof data.photo === "string" ? data.photo : null,
+    phone: typeof data.phone === "string" ? data.phone : null,
+    collegeId: typeof data.collegeId === "string" ? data.collegeId : null,
+    collegeName: typeof data.collegeName === "string" ? data.collegeName : null,
+    city: typeof data.city === "string" ? data.city : null,
+    state: typeof data.state === "string" ? data.state : null,
+    onboarded: typeof data.onboarded === "boolean" ? data.onboarded : false,
+    createdAt: typeof data.createdAt === "string" ? data.createdAt : "",
+    updatedAt: String(data.updatedAt),
+  }
 }
 
 // ── Colleges ────────────────────────────────────────────────────────────────

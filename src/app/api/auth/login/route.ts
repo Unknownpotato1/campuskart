@@ -38,12 +38,37 @@ export async function POST(req: NextRequest) {
       const name = (verified.name || email.split("@")[0]).trim()
       const photo = verified.photo || null
 
-      const user = await upsertUserFromFirebase({
-        uid: verified.uid,
-        email,
-        name,
-        photo,
-      })
+      // Resilient upsert: if Firestore is unavailable (e.g. quota exceeded),
+      // still issue a session cookie using the verified Firebase user info so
+      // the user can keep using the app. The next /api/auth/me call will
+      // either read the (possibly just-written) doc or fall back to the
+      // session-payload user — see session.ts.
+      let user
+      try {
+        user = await upsertUserFromFirebase({
+          uid: verified.uid,
+          email,
+          name,
+          photo,
+        })
+      } catch (e) {
+        console.error("upsertUserFromFirebase failed; issuing session with fallback user", e)
+        const ts = new Date().toISOString()
+        user = {
+          id: verified.uid,
+          email,
+          name,
+          photo,
+          phone: null,
+          collegeId: null,
+          collegeName: null,
+          city: null,
+          state: null,
+          onboarded: false,
+          createdAt: ts,
+          updatedAt: ts,
+        }
+      }
 
       await setSession(user.id, user.email)
       return NextResponse.json({ user })

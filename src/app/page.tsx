@@ -8,6 +8,7 @@ import { Footer } from "@/components/site/footer"
 import { BottomNav } from "@/components/site/bottom-nav"
 import { AuthModal } from "@/components/site/auth-modal"
 import { OnboardingModal } from "@/components/site/onboarding-modal"
+import { PwaInstallPrompt } from "@/components/site/pwa-install-prompt"
 import { LoadingMarketplace, ViewRouter } from "@/components/view-router"
 
 export default function Home() {
@@ -57,6 +58,7 @@ function Shell() {
       </main>
       {!isChatView && <Footer />}
       {!isInConversation && <BottomNav />}
+      {!isInConversation && <PwaInstallPrompt />}
       <AuthModal
         open={authModalOpen}
         onOpenChange={(open) => {
