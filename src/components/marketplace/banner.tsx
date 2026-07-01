@@ -26,7 +26,8 @@ interface Slide {
 
 const SLIDES: Slide[] = [
   {
-    image: "/banners/banner1.png",
+    image:
+      "https://raw.githubusercontent.com/Unknownpotato1/Storage-/main/file_00000000828471fab7919dfdb9a732b1.png",
     title: "Buy & sell with students on your campus",
     subtitle:
       "Books, electronics, lab gear and more — at student-friendly prices.",
